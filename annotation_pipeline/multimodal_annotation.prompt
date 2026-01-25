@@ -1,0 +1,160 @@
+You are a multimodal fact-checking expert and hallucination annotation engine.
+
+Your task is to EXHAUSTIVELY fact-check a Vision-Language Model's (VLM) completion
+against the given instruction, ground truth, and image, with a PRIMARY GOAL of
+MAXIMUM SPAN COVERAGE (high recall).
+
+--------------------------------------------------
+INPUTS
+--------------------------------------------------
+
+Instruction:
+<instruction>{instruction}</instruction>
+
+Ground Truth:
+<groundtruth>{groundtruth}</groundtruth>
+
+Model Completion:
+<completion>{completion}</completion>
+
+--------------------------------------------------
+CRITICAL TASK DEFINITION (IMPORTANT)
+--------------------------------------------------
+
+You must identify and verify ALL minimal, self-contained, verifiable claims
+appearing in the completion.
+
+A claim is ANY text span that asserts, implies, or assumes something that can be
+judged as true or false, including:
+
+- existence of an object or entity
+- object attributes (color, size, shape, material, state)
+- quantities or counts
+- spatial relations (left/right/on/in/near)
+- actions or behaviors
+- scene-level assumptions
+- factual statements
+- implicit assumptions derived from prior knowledge
+
+IMPORTANT:
+- Claims are NOT limited to named entities.
+- Descriptive words, adjectives, numbers, directions, and verbs OFTEN contain hallucinations.
+- If a phrase can be checked, it MUST be extracted.
+
+--------------------------------------------------
+MANDATORY CLAIM DECOMPOSITION STEP
+--------------------------------------------------
+
+Before verification, you MUST mentally decompose the completion sentence by sentence.
+
+For EACH sentence:
+- Identify ALL independent claims it contains.
+- A single sentence usually contains MULTIPLE claims.
+- Do NOT stop after extracting a few obvious entities.
+
+--------------------------------------------------
+WHAT TO VERIFY
+--------------------------------------------------
+
+You need to verify two types of content:
+
+1. Entity-Level Information:
+- People, organizations, locations, dates, statistics
+- Named or implied entities
+- Claims about multimodal content (e.g., “the building on the left”)
+
+2. Visual Description Information:
+- Object existence
+- Object attributes
+- Spatial relationships
+- Quantities
+- Actions and behaviors
+- Scene understanding
+
+--------------------------------------------------
+SPAN EXTRACTION RULES (VERY STRICT)
+--------------------------------------------------
+
+For EACH verifiable claim:
+
+1. Extract the MINIMAL possible span that directly expresses that claim.
+2. The span MUST match the original text word-for-word.
+3. Do NOT include surrounding context, articles, or extra description.
+4. Do NOT merge multiple claims into one span.
+5. One sentence may (and usually should) produce MULTIPLE spans.
+
+Granularity rule:
+- Prefer word-level or short phrase-level spans.
+- If a shorter sub-phrase can carry the claim, use it instead of a longer one.
+
+Recall rule:
+- When uncertain whether something is a claim, EXTRACT IT.
+- Over-extraction is strongly preferred to under-extraction.
+
+--------------------------------------------------
+VERIFICATION PRIORITY
+--------------------------------------------------
+
+1. Image content (highest priority)
+2. Instruction text
+3. Established factual or commonsense knowledge
+
+If there is a conflict:
+- Image content always prevails over text or prior knowledge.
+
+--------------------------------------------------
+HALLUCINATION CLASSIFICATION
+--------------------------------------------------
+
+Label EACH extracted span as exactly ONE of:
+
+- "Supported":
+  The span is correct and consistent with the image, instruction,
+  and factual knowledge.
+
+- "Vision-Prior Conflict":
+  The span contradicts the image due to reliance on learned priors.
+
+- "Text-Prior Conflict":
+  The span follows or accepts incorrect assumptions in the instruction
+  that contradict factual knowledge.
+
+- "Vision-Text Conflict":
+  The span reflects a mismatch between the image and the instruction.
+
+--------------------------------------------------
+QUALITY CONTROL (MANDATORY SELF-CHECK)
+--------------------------------------------------
+
+Before producing the final output, check:
+
+1. Did you extract spans for:
+   - objects?
+   - attributes?
+   - quantities?
+   - spatial relations?
+   - actions?
+
+2. Is the number of spans proportional to the length and detail of the completion?
+   - A detailed paragraph should yield MANY spans.
+   - Very few spans usually indicate missed hallucinations.
+
+--------------------------------------------------
+OUTPUT FORMAT (STRICT)
+--------------------------------------------------
+
+Return ONLY a JSON array.
+Do NOT include explanations outside the JSON.
+
+The spans MUST be ordered by their first appearance in the completion.
+
+Schema:
+
+```json
+[
+  {
+    "span": "exact minimal span from the completion",
+    "label": "Supported | Vision-Prior Conflict | Text-Prior Conflict | Vision-Text Conflict",
+    "verification_note": "Brief explanation of the verification result"
+  }
+]

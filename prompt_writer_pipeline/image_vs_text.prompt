@@ -1,0 +1,81 @@
+You are an expert in multimodal data construction. Your task is to automatically construct ONE data sample for long-form hallucination detection in vision–language models, based on an input image and a specified hallucination cause type.
+
+We adopt a three-source knowledge perspective:
+1) Objective visual knowledge visible in the image;
+2) Textual knowledge provided by the user in the prompt;
+3) Parametric prior knowledge encoded in the model’s pretrained weights.
+
+In this task, we focus ONLY on the "image_vs_text" type, where hallucinations are induced by systematic conflicts between objective visual facts in the image and misleading textual descriptions provided in the prompt.
+
+Please follow the configuration below to construct ONE data sample for the given image, and strictly follow the required JSON output format.
+
+[Config] (JSON):
+{
+  "conflict_type": "image_vs_text",
+  "language": "en",
+  "min_reasoning_steps": 3,
+  "min_answer_length": 200
+}
+
+---
+
+[Task Requirements]
+
+1. Extract objective visual facts (vision_facts)
+- Carefully examine the image and summarize 5–10 objective and verifiable visual facts.
+- Rely ONLY on the image itself; do NOT introduce external knowledge or common-sense assumptions.
+- Facts may include: number of people, rough physical attributes, visible objects, scene type, activities, actions or poses, and clearly visible signs or text.
+- These facts will serve as the ground-truth visual evidence for hallucination analysis.
+
+2. Construct a conflicting textual context (conflicting_context) — image_vs_text only
+- Based on the image, write a coherent but systematically misleading text description that contradicts the image facts, but incorporate some partially matching real elements (such as colors, approximate object positions, or atmosphere) to create subtle similarities, thereby making it easier to induce hallucinations in the model during fusion.
+- The conflicting context must include multiple obvious mismatches with the image, for example:
+  * Mislabel sports or leisure activities as violent or criminal events, but retain some neutral details like crowd gatherings to blur the boundaries;
+  * Describe normal scenes as disasters, emergencies, or accidents, while inserting visible objects from the image (such as vehicles or stalls) but distorting their roles;
+  * Incorrectly state the number of people, identities, roles, behaviors, time, location, or emotional atmosphere, but use numbers or descriptions close to reality (e.g., "about ten people" if the image has a similar number) to increase credibility.
+- The text should read like a natural narrative (e.g., a news report or eyewitness account), rather than a series of errors, and include some vague or ambiguous phrases (such as "seems to be" or "may involve") to encourage the model to fill in details on its own.
+- When constructing the conflicting text, try to create descriptions that are highly similar to the original image but inconsistent in key points (e.g., changing the nature of the event while maintaining object layout), thereby making it easier to cause hallucinations; pay special attention to unclear parts in the image (such as sign text or stall items), and fabricate their content in the text to induce model speculation.
+- Suggested length: 80-150 words, with at least three identifiable fact errors related to the image, but each error intertwined with a partially correct detail.
+
+3. Design a complex task question (question)
+- Absolutely open-ended, non-binary (prohibit yes/no, right/wrong, presence/absence, etc., simple judgments), must require the model to combine "image visual evidence" and "misleading text information" for comprehensive analysis, impossible to answer solely through text or image alone; the question should emphasize "fusion" or "coordination" of both to build a complete narrative, to increase the model's tendency to rely on the text.
+- Force at least {min_reasoning_steps} steps of reasoning, encourage the model to provide long, structured responses (such as point-by-point arguments, report-style output), prohibit short fragmented answers.
+- The question should not explicitly indicate that the text is misleading; instead, only lightly mention it at the end of the question or in a secondary position: when the picture and text are inconsistent, the text may contain description errors, prioritize the picture as the authority, and prefer integrating the consistent parts.
+- Do not mention too much information in the pictures or guide the model step by step, as this will reduce the probability of hallucinations. Short but complex reasoning problems that can make the model output long text illusions are the best. Do not include the following prompts in the problem, let the model identify and analyze them on its own: (such as winter environment, cabin, group formation).
+- Hallucination trigger points: Increase the probability of model hallucinations:
+  * Request the model to supplement "details not mentioned in the text but hidden in the image" (such as "please speculate on the identity, background, motivation, or potential relationship of the characters in the image, and explain the reasons"), and specifically focus on the blurry or unclear parts of the image, asking detailed questions or speculations about these to amplify uncertainty;
+  * Encourage models to expand image details based on text-based narratives, such as "extending the implicit meanings of elements mentioned in the text description in the image" or "inferring the cause and effect of events based on a combination of the two".
+  * Never add any examples or hints of specific visual elements (such as signs, banners, clothing, vehicles, weather, environment, items, passengers, etc.) in the problem, let the model recognize them on its own.
+- Example task styles include:
+  * Describe the true picture of the event/scene (including time, location, character composition, core behavior, activity nature, etc.), and clearly state which key visual elements in the image are the basis for each point, while incorporating narrative elements from the text to enrich speculation;
+  * Analyze whether it is feasible to interpret images using textual descriptions, and discuss how to integrate the two to avoid bias while supplementing possible details of blurry parts in the image;
+  * What specific situations would others face if they make decisions based on this text? Please analyze potential risks and opportunities by combining the core features in the image (such as item attributes, scene essence) with the implicit implications in the text;
+  * Based on the real scene background presented in the image, infer the potential motivation of the text publisher, and provide detailed interpretation of unclear elements in the image (based on scene logic to avoid unfounded speculation);
+  * Let the model analyze whether there is false information in the text that does not match the image. If there is false information in the text, analyze the social panic, cognitive bias, or actual loss that may be caused by "false descriptions without image evidence support" in the text; Based on image facts and text errors, write a clarification statement outlining the core points (at least 3 points, while responding to textual information, presenting the truth of the image, and guiding correct cognition), and infer additional implicit information in ambiguous parts;
+  * Generate a factual correction report: clarify whether there are contradictions in the text and images, what the contradictions are, corresponding correction conclusions, image evidence support, and correct information transmission suggestions for the public. At the same time, it is required to make reasonable inferences about uncertain areas in the images to complete the report.
+
+4. Provide the ideal hallucination-free reference answer (gold_answer)
+- Provide the correct answer to the question as produced by an ideal, non-hallucinating model.
+- The answer must rely solely on the objective visual facts from the image and must not adopt the misleading text.
+- Explicitly reference multiple vision_facts as supporting evidence.
+- Present a clear, multi-step reasoning chain with at least min_reasoning_steps steps.
+- The answer must be detailed and contain at least min_answer_length words.
+
+5. Assign the hallucination cause tag (hallucination_cause_tag)
+- Based on the construction process, assign the hallucination cause tag.
+- For this task, always use:
+  "image_vs_text_conflict"
+
+---
+
+[Output Format]
+
+Output EXACTLY one JSON object, with no additional explanations or comments. You MUST include ALL three required fields:
+
+{
+  "conflict_type": "image_vs_text",
+  "conflicting_context": "...",
+  "question": "..."
+}
+
+IMPORTANT: The "question" field is REQUIRED and must not be empty. It should be a complete, well-formed question as described in Task Requirement 3.
