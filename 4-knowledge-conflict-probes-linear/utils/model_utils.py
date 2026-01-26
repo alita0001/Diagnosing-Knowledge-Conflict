@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from peft import PeftModel, LoraConfig, get_peft_model  # LoRA参数高效微调库
+from peft import PeftModel, LoraConfig, get_peft_model  # LoRA parameter efficient fine-tuning library
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, PreTrainedModel, AutoProcessor, AutoModelForImageTextToText
 
 
@@ -24,12 +24,12 @@ def load_model_and_processor(
     torch_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[AutoModelForImageTextToText, AutoProcessor]:
     """
-    加载视觉语言模型（VLM），支持图像+文本输入  chj
-    模型：AutoModelForImageTextToText（多模态模型）
-    处理器：AutoProcessor（包含 tokenizer 和 image_processor）
-    特点：
-        processor.tokenizer.padding_side = 'left'（左侧填充）
-        适用于编码器-解码器架构的多模态模型
+    Load Vision-Language Model (VLM), supporting Image + Text input.
+    Model: AutoModelForImageTextToText (Multimodal model)
+    Processor: AutoProcessor (includes tokenizer and image_processor)
+    Features:
+        processor.tokenizer.padding_side = 'left' (Left padding)
+        Suitable for encoder-decoder architecture multimodal models
     """
     # Set default dtype
     if torch_dtype is None:
@@ -40,10 +40,10 @@ def load_model_and_processor(
         model_name,
         device_map=device_map,
         torch_dtype=torch_dtype,
-        trust_remote_code=True, # 允许执行远程代码
+        trust_remote_code=True, # Allow execution of remote code
     )
     
-    # Load tokenizer 分词器加载
+    # Load tokenizer
     processor = AutoProcessor.from_pretrained(
         model_name,
         trust_remote_code=True, 
@@ -60,7 +60,7 @@ def load_model_and_tokenizer(
 ) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
     """
     Load a model and tokenizer from HuggingFace.
-    加载纯文本语言模型
+    Load pure text language model
     
     Args:
         model_name: Name or path of the model
@@ -71,8 +71,8 @@ def load_model_and_tokenizer(
         
     Returns:
         Tuple of (model, tokenizer)
-        模型：AutoModelForCausalLM（因果语言模型）
-        分词器：AutoTokenizer（仅文本分词器）
+        Model: AutoModelForCausalLM (Causal Language Model)
+        Tokenizer: AutoTokenizer (Text-only Tokenizer)
     """
     # Set default dtype
     if torch_dtype is None:
@@ -90,10 +90,10 @@ def load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
-        padding_side='right'  # 因果模型从左往右生成，右填充不会影响已生成的内容的注意力计算
+        padding_side='right'  # Causal models generate from left to right, right padding does not affect attention calculation for generated content
     )
     
-    # Set padding token if not set 如果未设置填充token，则使用结束token
+    # Set padding token if not set, use eos token if padding token is missing
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
@@ -106,12 +106,12 @@ def setup_model_with_lora(
     lora_weights_path: Optional[str] = None,
 ) -> PeftModel:
     """
-    LoRA适配器设置工具
+    LoRA adapter setup tool
     
-    功能：
-    1. 创建LoRA配置
-    2. 应用到模型
-    3. 支持预训练权重加载
+    Functions:
+    1. Create LoRA configuration
+    2. Apply to model
+    3. Support loading pre-trained weights
     Setup a model with LoRA adapters.
     
     Args:
@@ -124,12 +124,12 @@ def setup_model_with_lora(
     """
     # Create LoRA configuration
     peft_config = LoraConfig(
-        r=lora_config.get("r", 16),  # LoRA秩 - 控制适应能力
-        lora_alpha=lora_config.get("alpha", 32),  # 缩放因子 - 控制适应速度 
-        lora_dropout=lora_config.get("dropout", 0.05),  # 丢弃率 - 控制适应稳定性，防止过拟合
-        bias="none",  # 偏置配置 - 控制适应效果
-        task_type="CAUSAL_LM",  # 任务类型 - 因果语言模型
-        target_modules=lora_config.get("target_modules", ["q_proj", "v_proj"]),  # 目标模块 - 控制适应位置
+        r=lora_config.get("r", 16),  # LoRA rank - controls adaptation capacity
+        lora_alpha=lora_config.get("alpha", 32),  # Scaling factor - controls adaptation speed
+        lora_dropout=lora_config.get("dropout", 0.05),  # Dropout rate - controls adaptation stability, prevents overfitting
+        bias="none",  # Bias configuration - controls adaptation effect
+        task_type="CAUSAL_LM",  # Task type - Causal Language Model
+        target_modules=lora_config.get("target_modules", ["q_proj", "v_proj"]),  # Target modules - controls adaptation locations
     )
     
     # Apply LoRA to model
@@ -145,9 +145,9 @@ def setup_model_with_lora(
 
 def get_model_layers(model: PreTrainedModel) -> List[nn.Module]:
     """
-    关键功能：统一不同模型架构的层访问接口 chj
+    Key functionality: Unify layer access interface for different model architectures
     
-    挑战：不同模型架构的层存储位置不同：
+    Challenge: Different model architectures store layers in different locations:
     - LLaMA: model.layers
     - GPT-2: transformer.h  
     - BERT: encoder.layer
@@ -162,9 +162,9 @@ def get_model_layers(model: PreTrainedModel) -> List[nn.Module]:
     """
     # Handle PeftModel by getting the base model
     if isinstance(model, PeftModel):   
-        base_model = model.get_base_model()  # 获取被 PeftModel 包装的原始模型
+        base_model = model.get_base_model()  # Get the original model wrapped by PeftModel
     else:
-        base_model = model  #  如果不是 PeftModel，直接使用
+        base_model = model  # If not PeftModel, use directly
     
     # Common patterns for accessing layers in different model architectures
     if hasattr(base_model, 'model') and hasattr(base_model.model, 'layers'):
@@ -188,11 +188,11 @@ def get_model_layers(model: PreTrainedModel) -> List[nn.Module]:
 
 def get_num_layers(model_or_name: Union[str, PreTrainedModel]) -> int:
     """
-    获取模型层数 - 支持字符串名称和模型实例两种方式 chj
+    Get number of model layers - supports both string name and model instance.
     
-    设计优势：
-    1. 字符串查表：无需加载模型，速度快
-    2. 实例计算：支持自定义模型，通用性强
+    Design advantages:
+    1. String lookup: No need to load model, fast
+    2. Instance calculation: Supports custom models, high generality
     Get the number of transformer layers in a model.
     
     Args:
@@ -204,17 +204,17 @@ def get_num_layers(model_or_name: Union[str, PreTrainedModel]) -> int:
     # If it's a string (model name), use the predefined mapping
     if isinstance(model_or_name, str):
         model_layers_map = {
-            # LLaMA系列
+            # LLaMA series
             "meta-llama/Meta-Llama-3.1-8B-Instruct": 32,
             "meta-llama/Meta-Llama-3.1-70B-Instruct": 80,
             "meta-llama/Meta-Llama-3.1-405B-Instruct": 126,
             "meta-llama/Llama-3.3-70B-Instruct": 80,
             "Llama-3.2V-11B-cot":40,
-            # Gemini系列
+            # Gemini series
             "google/gemma-2-2b-it": 26,
             "google/gemma-2-9b-it": 42,
             "google/gemma-2-27b-it": 46,
-            # Qwen系列
+            # Qwen series
             "Qwen/Qwen2.5-0.5B-Instruct": 24,
             "Qwen/Qwen2.5-1.5B-Instruct": 28,
             "Qwen/Qwen2.5-3B-Instruct": 36,
@@ -228,7 +228,7 @@ def get_num_layers(model_or_name: Union[str, PreTrainedModel]) -> int:
             "/new_disk/cbl/Models/R1-Onevision-7B":28,
             "/data2/lhl1/Models/Ocean_R1_7B_Instruct":28,
             "/new_disk/cbl/Models/Ocean_R1_7B_Instruct":28,
-            # Mistral系列
+            # Mistral series
             "mistralai/Mistral-Small-24B-Instruct-2501": 40,
         }
         if model_or_name in model_layers_map:
@@ -242,10 +242,10 @@ def get_num_layers(model_or_name: Union[str, PreTrainedModel]) -> int:
 
 def get_model_layers_prefix(model: PreTrainedModel) -> str:
     """
-    获取模型层的访问路径前缀
+    Get access path prefix for model layers.
     
-    用途：用于LoRA target_modules的路径构建
-    例如："model.layers.0.self_attn.q_proj"
+    Usage: For building LoRA target_modules paths
+    Example: "model.layers.0.self_attn.q_proj"
     Get the prefix path to the model layers.
     
     Args:
@@ -277,8 +277,8 @@ def get_model_layers_prefix(model: PreTrainedModel) -> str:
     elif hasattr(base_model, 'gpt_neox') and hasattr(base_model.gpt_neox, 'layers'):
         return "gpt_neox.layers"
     else:
-        # 提供更详细的错误信息，帮助调试
-        # 检查是否有 language_model 或 model 属性
+        # Provide more detailed error information to help debugging
+        # Check if language_model or model attribute exists
         debug_info = f"Model type: {type(base_model)}\n"
         debug_info += f"Has 'model' attribute: {hasattr(base_model, 'model')}\n"
         if hasattr(base_model, 'model'):
@@ -299,10 +299,10 @@ def get_model_layers_prefix(model: PreTrainedModel) -> str:
 
 def get_model_hidden_size(model: PreTrainedModel) -> int:
     """
-    获取模型隐藏层维度 - 探测器初始化的关键参数
+    Get model hidden size - key parameter for probe initialization.
     
-    重要性：探测器线性层需要知道输入维度
-    例如：LLaMA-3.1-8B的hidden_size=4096
+    Importance: Probe linear head needs to know input dimension
+    Example: LLaMA-3.1-8B hidden_size=4096
     Get the hidden size of a transformer model.
     
     Args:
@@ -338,7 +338,7 @@ def get_model_hidden_size(model: PreTrainedModel) -> int:
 
 def setup_lora_for_layers(
     model: PreTrainedModel,
-    layer_indices: List[int],  # 目标层索引列表
+    layer_indices: List[int],  # List of target layer indices
     lora_r: int = 16,
     lora_alpha: int = 32,
     lora_dropout: float = 0.05,
@@ -394,11 +394,11 @@ def setup_lora_for_layers(
 
 def print_trainable_parameters(model: nn.Module) -> Tuple[int, int]:
     """
-    训练参数分析工具 - 用于调试和监控
-    功能：
-    1. 列出所有可训练参数
-    2. 计算参数总数和占比
-    3. 显示参数分布情况
+    Trainable parameters analysis tool - for debugging and monitoring
+    Features:
+    1. List all trainable parameters
+    2. Calculate total parameters and percentage
+    3. Show parameter distribution
     Print information about trainable parameters in a model.
     
     Args:

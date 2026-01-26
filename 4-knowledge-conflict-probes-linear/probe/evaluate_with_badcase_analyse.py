@@ -1,4 +1,4 @@
-"""幻觉检测探针的评估脚本。"""
+
 
 import gc
 import json
@@ -40,33 +40,17 @@ def evaluate_probe(
     dump_raw_results: bool = False,
     tokenizer: Optional[Union[AutoTokenizer, AutoProcessor]] = None,
 ) -> Dict[str, float]:
-    """
-    已修改
-    评估探针在数据集上的性能（四分类版本）。
-    Args:
-        probe: 要评估的探针
-        eval_dataloader: 评估数据的DataLoader
-        metric_key_prefix: 指标键的前缀
-        verbose: 是否打印指标
-        save_roc_curves: 是否保存ROC曲线图
-        save_dir: 保存结果的目录
-        save_dir: 保存结果的目录
-        dump_raw_results: 是否保存原始预测结果
-        tokenizer: 用于解码文本的tokenizer/processor
-    Returns:
-        评估指标字典
-    """
-    # 评估前强制垃圾回收
+
     gc.collect()
     torch.cuda.empty_cache()
 
-    # 为不同聚合级别初始化指标集合
+
     all_probs = {'all': [], 'span': [], 'span_max': []}
     all_preds = {'all': [], 'span': [], 'span_max': []}
     all_preds = {'all': [], 'span': [], 'span_max': []}
     all_labels = {'all': [], 'span': [], 'span_max': []}
     
-    # 用于保存详细结果的列表
+
     detailed_results = []
 
     total_lm_loss = 0
@@ -85,56 +69,41 @@ def evaluate_probe(
         vtc_spans: List[List[List[int]]] = batch["vtc_spans"]
         neg_spans: List[List[List[int]]] = batch["neg_spans"]
 
-        # 前向传播
         outputs = probe(
-            # input_ids=input_ids,
-            # attention_mask=attention_mask,
             inputs=batch["inputs"].to(probe.device),
             labels=lm_labels,
         )
 
         probe_logits: Float[Tensor, "batch_size seq_len num_classes"] = outputs["probe_logits"]
         probe_probs: Float[Tensor, "batch_size seq_len num_classes"] = torch.softmax(probe_logits, dim=-1).float()
-        # 每个 token 4个类别中，类别logit最大的那个类别作为预测类别
         probe_preds: Int[Tensor, "batch_size seq_len"] = torch.argmax(probe_logits, dim=-1).long()  
 
-        # 计算四分类交叉熵损失（带样本权重）
         probe_loss = compute_probe_ce_loss(
             probe_logits=probe_logits,
             classification_labels=classification_labels,
             classification_weights=classification_weights,
         )
 
-        # 1. 所有token级别的指标（排除padding和被忽略的tokens）
         valid_mask = (attention_mask == 1) & (classification_labels != -100.0)
-        # 对于四分类，存储每个token的完整4维概率向量和预测类别索引
         all_probs['all'].extend(probe_probs[valid_mask].cpu().numpy())
         all_preds['all'].extend(probe_preds[valid_mask].cpu().numpy())
-        # 范围	所有有效tokens
         all_labels['all'].extend(classification_labels[valid_mask].cpu().numpy().astype(int))
 
-        # 2. Span级别的指标：不会包含非 span 的有效 token
-        # 创建一个与 input_ids 同形状的布尔掩码，初始值全为 False
         annotated_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
         for i in range(len(input_ids)):
-            # 四分类：收集所有类型的spans（VPC, TPC, VTC, 负样本）
             all_spans: List[List[int]] = vpc_spans[i] + tpc_spans[i] + vtc_spans[i] + neg_spans[i]
             for span_range in all_spans:
                 start, end = span_range[0], span_range[1]
                 assert start <= end, f"Invalid span range: {span_range}"
                 annotated_tokens_mask[i, start:end+1] = True
 
-        # 过滤被忽略的tokens
         annotated_tokens_mask = annotated_tokens_mask & (classification_labels != -100.0)
         
         all_probs['span'].extend(probe_probs[annotated_tokens_mask].cpu().numpy())
         all_preds['span'].extend(probe_preds[annotated_tokens_mask].cpu().numpy())
-        # 范围	仅在已标注spans内的tokens
         all_labels['span'].extend(classification_labels[annotated_tokens_mask].cpu().numpy().astype(int))
 
-        # 3. Span级别的指标（使用最大聚合）
         for i in range(len(input_ids)):
-            # 四分类：收集所有类型的spans并分配正确的类别标签
             vpc_spans_batch = vpc_spans[i]
             tpc_spans_batch = tpc_spans[i]
             vtc_spans_batch = vtc_spans[i]
@@ -143,7 +112,6 @@ def evaluate_probe(
             if len(all_spans) == 0:
                 continue
 
-            # 四分类标签：类别1 (VPC), 类别2 (TPC), 类别3 (VTC), 类别0 (负样本)
             span_labels = (
                 [1] * len(vpc_spans_batch) + 
                 [2] * len(tpc_spans_batch) + 
@@ -152,40 +120,30 @@ def evaluate_probe(
             )
 
             for label, (start, end) in zip(span_labels, all_spans):
-                # 对于每个span，找到对应类别在span内的最大概率
                 span_probs = probe_probs[i, start:end+1]  # [span_len, 4]
                 
-                # 基于max聚合：找出使任一类别概率最大的token，用该token的整行概率argmax作为span预测
-                token_max_vals, _ = torch.max(span_probs, dim=1)  # [span_len]   按行取最大
-                best_token_idx = torch.argmax(token_max_vals)  # 最大中的最大 的索引（token索引）
-                best_token_probs = span_probs[best_token_idx]  # 对预测决策对齐：最大Logit所在token的四个logit，用来预测
-                max_pred = int(torch.argmax(best_token_probs).cpu().item())  # 得到代表token之后选logit最大那个类别
+                token_max_vals, _ = torch.max(span_probs, dim=1)  
+                best_token_idx = torch.argmax(token_max_vals)  
+                best_token_probs = span_probs[best_token_idx]  
+                max_pred = int(torch.argmax(best_token_probs).cpu().item())  
                 
-                # 对于多分类指标，需要完整的4维概率向量
-                # 选择对应类别概率最大的token的完整概率向量
-                max_class_prob_idx = span_probs[:, label].argmax()  # 该类别的最大概率的token索引
-                max_prob_vector = span_probs[max_class_prob_idx].cpu().numpy()  # 对真实类对齐：该token的完整4维概率向量，用来评估
+                max_class_prob_idx = span_probs[:, label].argmax()  
+                max_prob_vector = span_probs[max_class_prob_idx].cpu().numpy()  
                 
-                all_probs['span_max'].append(max_prob_vector)  # 保存完整的4维概率向量
+                all_probs['span_max'].append(max_prob_vector)  
                 all_preds['span_max'].append(max_pred)
                 all_labels['span_max'].append(label)
 
-                # 如果提供了tokenizer，保存详细结果用于bad case分析
                 if tokenizer is not None:
-                    # 解码span文本
                     span_text = tokenizer.decode(input_ids[i, start:end+1])
                     
-                    # 获取完整上下文
                     messages = batch["messages"][i]
                     
-                    # 提取图像路径（如果有）
                     image_path = None
                     for msg in messages:
                         if isinstance(msg.get('content'), list):
                             for content in msg['content']:
                                 if content.get('type') == 'image':
-                                    # 注意：这里假设image对象无法直接序列化，可能需要保存路径或其他标识
-                                    # 如果是PIL对象，这里可能需要特殊处理，或者只标记有图像
                                     image_path = "Image present" 
                                     if hasattr(content['image'], 'filename'):
                                         image_path = content['image'].filename
@@ -200,29 +158,23 @@ def evaluate_probe(
                         "span_indices": [start, end]
                     })
         
-        # 更新运行指标
         total_lm_loss += outputs["lm_loss"].item()
         total_probe_loss += probe_loss.item()
-        # 四分类：计算幻觉类别（1,2,3）的平均概率总和
-        valid_probs = probe_probs[attention_mask == 1]  # [num_valid_tokens, 4]
-        hallucination_probs = valid_probs[:, 1:].sum(dim=-1)  # [num_valid_tokens] - 类别1,2,3的概率和
+        valid_probs = probe_probs[attention_mask == 1]  
+        hallucination_probs = valid_probs[:, 1:].sum(dim=-1)  
         total_sparsity += hallucination_probs.mean().item()
         num_batches += 1
 
-    # 计算平均指标
     metrics = {
         "lm_loss": total_lm_loss / num_batches,
         "probe_loss": total_probe_loss / num_batches,
         "sparsity": total_sparsity / num_batches,
-        "num_classes": 4,  # 四分类
+        "num_classes": 4,
     }
 
-    # 将列表转换为numpy数组
     all_probs = {k: np.array(v) for k, v in all_probs.items()}
     all_preds = {k: np.array(v) for k, v in all_preds.items()}
     all_labels = {k: np.array(v) for k, v in all_labels.items()}
-
-    # 为每个聚合级别计算分类指标
     for agg_level in ['all', 'span', 'span_max']:
         if len(all_labels[agg_level]) == 0:
             continue
@@ -236,14 +188,12 @@ def evaluate_probe(
         for metric_name, metric_value in clf_metrics.items():
             metrics[f"{agg_level}_{metric_name}"] = metric_value
 
-    # 如果指定了前缀，则添加前缀： metric_key_prefix（比如数据集 ID）
     if metric_key_prefix:
         metrics = {
             f"{metric_key_prefix}/{k}": v
             for k, v in metrics.items()
         }
 
-    # 如果verbose为True，则打印指标
     if verbose:
         print_eval_metrics(
             metrics,
@@ -252,7 +202,6 @@ def evaluate_probe(
             include_random_baseline=True,
         )
 
-    # 保存ROC曲线
     if save_roc_curves and save_dir:
         plot_roc_curves(
             all_preds, 
@@ -262,7 +211,6 @@ def evaluate_probe(
             prefix=metric_key_prefix
         )
 
-    # 如果请求，保存原始结果
     if dump_raw_results and save_dir:
         results_dir = save_dir / "eval_results"
         if metric_key_prefix:
@@ -272,18 +220,15 @@ def evaluate_probe(
         with open(results_dir / 'metrics.json', 'w') as f:
             json.dump(metrics, f, indent=4)
         
-        # 保存原始预测结果
         for agg_level in ['span_max']:
             if len(all_labels[agg_level]) > 0:
                 np.save(results_dir / f'{agg_level}_probs.npy', all_probs[agg_level])
                 np.save(results_dir / f'{agg_level}_preds.npy', all_preds[agg_level])
                 np.save(results_dir / f'{agg_level}_labels.npy', all_labels[agg_level])
 
-        # 保存详细结果
         if tokenizer is not None and len(detailed_results) > 0:
             save_jsonl(detailed_results, results_dir / "detailed_results.jsonl")
 
-    # 清理
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -295,32 +240,20 @@ def evaluate_on_multiple_datasets(
     eval_config: EvaluationConfig,
     tokenizer: AutoTokenizer,
 ) -> Dict[str, Dict[str, float]]:
-    """
-    在多个数据集上评估探针。
-    Args:
-        probe: 要评估的探针
-        eval_config: 评估配置
-        tokenizer: 模型的tokenizer
-    Returns:
-        映射数据集ID到其指标的字典
-    """
+
     all_metrics = {}
     
-    # 创建输出目录
     output_dir = Path(eval_config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 在每个数据集上评估
     for dataset_config in eval_config.dataset_configs:
         print(f"\nEvaluating on {dataset_config.dataset_id}...")
         
-        # 创建数据集
         dataset = create_probing_dataset(dataset_config, tokenizer)
         print(f"  Dataset size: {len(dataset)} samples")
         
         from functools import partial
         collate_fn = partial(tokenized_probing_collate_fn, processor=tokenizer)
-        # 创建数据加载器
         dataloader = DataLoader(
             dataset,
             batch_size=eval_config.per_device_eval_batch_size,
@@ -328,7 +261,6 @@ def evaluate_on_multiple_datasets(
             shuffle=False,
         )
         
-        # 评估
         metrics = evaluate_probe(
             probe=probe,
             eval_dataloader=dataloader,
@@ -340,7 +272,6 @@ def evaluate_on_multiple_datasets(
             tokenizer=tokenizer,
         )
         
-        # 保存指标
         metrics['dataset_id'] = dataset_config.dataset_id
         save_jsonl([metrics], output_dir / "eval_metrics.jsonl", append=True)
         
@@ -350,24 +281,17 @@ def evaluate_on_multiple_datasets(
 
 
 def main(eval_config: EvaluationConfig):
-    """主评估函数。"""
-    # ===== 1、加载环境变量 =====
-    # 如果存在.env文件，加载环境变量
     load_dotenv()
     
-    # ===== 2、打印评估配置 =====
     print("Evaluation Configuration:")
     for key, value in eval_config.__dict__.items():
         print(f"  {key}: {value}")
     
-    # ===== 3、加载模型与处理器/分词器 =====
     print(f"\nLoading model: {eval_config.probe_config.model_name}")
-    # 检查是否是多模态模型
     model_name = eval_config.probe_config.model_name
     is_multimodal = 'vision' in model_name.lower() or 'onevision' in model_name.lower()
     
     if is_multimodal:
-        # 使用 AutoProcessor 代替 AutoTokenizer
         print(f"Loading multimodal model: {model_name}")
         
         processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
@@ -380,22 +304,18 @@ def main(eval_config: EvaluationConfig):
             trust_remote_code=True
         )
         
-        tokenizer = processor  # 将 processor 作为 tokenizer 传递
+        tokenizer = processor 
     else:
-        # 原有的文本模型加载逻辑
         model, tokenizer = load_model_and_tokenizer(model_name)
     
-    # ===== 4、按照配置加载并装配探针（ValueHeadProbe/LoRA等） =====
     print(f"\nLoading probe: {eval_config.probe_config.probe_id}")
     model, probe = setup_probe(model, eval_config.probe_config)
     
     print(f"Device: {next(probe.parameters()).device}")
     
-    # ===== 5、在各评估数据集上运行评估 =====
     print(f"\nEvaluating on {len(eval_config.dataset_configs)} datasets...")
     results = evaluate_on_multiple_datasets(probe, eval_config, tokenizer)
     
-    # ===== 6、打印关键指标摘要 =====
     print("\n" + "="*50)
     print("EVALUATION SUMMARY")
     print("="*50)
@@ -423,7 +343,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # 从YAML加载配置
     config_dict = load_yaml(args.config)
     eval_config = EvaluationConfig(**config_dict)
     

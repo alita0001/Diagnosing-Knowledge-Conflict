@@ -1,4 +1,4 @@
-"""用于幻觉检测探针的自定义训练器"""
+"""Custom trainer for hallucination detection probe"""
 
 import gc
 import math
@@ -25,8 +25,8 @@ from .evaluate import evaluate_probe
 
 class ProbeTrainer(Trainer):
     """
-    自定义训练器，将标准语言模型的下一个token预测损失（CE）
-    与钩入内部层的"探针"的分类BCE损失合并。
+    Custom trainer that merges standard LM next-token prediction loss (CE)
+    with the classification BCE loss of the "probe" hooked into internal layers.
     """
     def __init__(
         self,
@@ -54,7 +54,7 @@ class ProbeTrainer(Trainer):
         self._last_eval_metrics: Optional[dict] = None
 
     def get_training_progress(self) -> float:
-        """获取当前训练进度，返回0到1之间的浮点数"""
+        """Get current training progress, returns float between 0 and 1"""
         if self.state.max_steps is None or self.state.max_steps == 0:
             return 1.0
         return min(1.0, self.state.global_step / self.state.max_steps)
@@ -67,9 +67,9 @@ class ProbeTrainer(Trainer):
         num_items_in_batch=None
     ):
         """
-        已修改
+        Modified
         """
-        # 如果使用DataParallel，从底层模型获取设备
+        # If using DataParallel, get device from underlying model
         device = model.module.device if isinstance(model, nn.DataParallel) else model.device
 
         input_ids: torch.Tensor = batch["input_ids"].to(device)
@@ -83,24 +83,24 @@ class ProbeTrainer(Trainer):
         neg_spans: List[List[Tuple[int, int]]] = batch["neg_spans"]
 
 
-        # 底层HF语言模型期望"labels"用于下一个token预测
+        # Underlying HF language model expects "labels" for next token prediction
         outputs = model(
             inputs = batch["inputs"],
             # input_ids=input_ids,
             # attention_mask=attention_mask,
-            labels=lm_labels,  # 这些是LM标签（不是探针标签！）
+            labels=lm_labels,  # These are LM labels (not probe labels!)
         )
 
         lm_logits = outputs["lm_logits"]
-        # probe_logits_1 = outputs["probe_logits"].squeeze(-1)  # 二分类 shape [B, T]  # 形状 [B, T]
+        # probe_logits_1 = outputs["probe_logits"].squeeze(-1)  # Binary classification shape [B, T]
         probe_logits = outputs["probe_logits"]  # shape [B, T, 4] for 4-class classification
-        lm_loss = outputs["lm_loss"]  # 标准下一个token的CE损失
+        lm_loss = outputs["lm_loss"]  # Standard next token CE loss
 
         if torch.isnan(lm_loss):
             print(f"WARNING: NaN detected in lm_loss")
             lm_loss = torch.tensor(0.0, device=device)
 
-        # 如果需要，计算KL散度 未修改
+        # Calculate KL divergence if needed (Unmodified)
         kl_loss = torch.tensor(0., device=device)
         if self.lambda_kl > 0:
             kl_loss = compute_kl_divergence_loss(
@@ -112,26 +112,26 @@ class ProbeTrainer(Trainer):
                 lm_labels=lm_labels,
             )
 
-        # 如果配置了，掩码高损失的spans  未修改
+        # Mask high loss spans if configured (Unmodified)
         if self.high_loss_threshold is not None:
             classification_labels = mask_high_loss_spans(
                 lm_model=model.model,
                 inputs=batch["inputs"],
                 # input_ids=input_ids,
                 # attention_mask=attention_mask,
-                classification_labels=classification_labels,  # [B, T] 和二分类一样
+                classification_labels=classification_labels,  # [B, T] same as binary classification
                 spans=neg_spans,
                 threshold=self.high_loss_threshold,
             )
 
-        # 计算探针损失
+        # Calculate probe loss
         probe_loss = compute_probe_ce_loss(
             probe_logits=probe_logits,
             classification_labels=classification_labels,
             classification_weights=classification_weights,
         )
 
-        # Span级别的最大聚合损失（如果启用）
+        # Span-level max aggregation loss (if enabled)
         if self.anneal_max_aggr:
             max_aggr_probe_loss = compute_probe_max_aggregation_loss(
                 probe_logits=probe_logits,
@@ -149,7 +149,7 @@ class ProbeTrainer(Trainer):
             omega = 0.0
             max_aggr_probe_loss = torch.tensor(0.0, device=device)
 
-        # 合并损失
+        # Combine losses
         loss = (
             self.lambda_lm * lm_loss +
             self.lambda_kl * kl_loss +
@@ -177,7 +177,7 @@ class ProbeTrainer(Trainer):
             outputs["lm_loss"] = lm_loss
             return (loss, outputs)
         
-        # 如果不返回输出，清理内存
+        # If not returning outputs, clear memory
         del outputs, lm_logits, probe_logits
         gc.collect()
         torch.cuda.empty_cache()
@@ -186,13 +186,13 @@ class ProbeTrainer(Trainer):
     
     def create_optimizer(self):
         """
-        创建优化器，为探针头和LoRA适配器设置不同的学习率。
+        Create optimizer, setting different learning rates for probe head and LoRA adapter.
         """
         
-        # 如果使用DataParallel，从底层模型获取设备
+        # If using DataParallel, get device from underlying model
         model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
         
-        # 将参数分为探针头和LoRA组
+        # Split parameters into probe head and LoRA groups
         probe_head_params = []
         lora_params = []
         other_params = []
@@ -212,7 +212,7 @@ class ProbeTrainer(Trainer):
 
         assert probe_head_added == True, f"Probe head not found when computing list of trainable parameters"
         
-        # 创建具有不同学习率的参数组
+        # Create parameter groups with different learning rates
         param_groups = []
         
         if probe_head_params:
@@ -230,14 +230,14 @@ class ProbeTrainer(Trainer):
             })
             
         if other_params:
-            # 对于任何其他参数，回退到默认学习率
+            # For any other parameters, fallback to default learning rate
             param_groups.append({
                 'params': other_params,
                 'lr': self.args.learning_rate,
                 'name': 'other'
             })
         
-        # 打印参数组信息
+        # Print parameter group info
         print("\n=== Optimizer Parameter Groups ===")
         for i, group in enumerate(param_groups):
             param_count = sum(p.numel() for p in group['params'])
@@ -255,12 +255,12 @@ class ProbeTrainer(Trainer):
     
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         """
-        重写以确保在创建调度器之前创建我们的自定义优化器。
+        Override to ensure our custom optimizer is created before creating scheduler.
         """
-        # 首先创建我们的自定义优化器
+        # First create our custom optimizer
         self.optimizer = self.create_optimizer()
         
-        # 然后使用父方法创建调度器
+        # Then use parent method to create scheduler
         self.create_scheduler(
             num_training_steps=num_training_steps,
             optimizer=self.optimizer
@@ -277,16 +277,16 @@ class ProbeTrainer(Trainer):
     ):
         all_eval_metrics = {}
 
-        # 检查这是否是最终评估
+        # Check if this is final evaluation
         is_final_evaluation = self.get_training_progress() >= 1.0
         
-        # 如果这是最终评估且已经完成，跳过
+        # If final evaluation and already completed, skip
         if is_final_evaluation and self._last_eval_metrics is not None:
             if verbose:
                 print("Final evaluation already completed, skipping duplicate evaluation.")
             return self._last_eval_metrics
 
-        # 在每个数据集上评估
+        # Evaluate on each dataset
         for dataset in self.eval_datasets:
             eval_dataloader = self.get_eval_dataloader(dataset)
 
@@ -313,12 +313,12 @@ class ProbeTrainer(Trainer):
             self.log(metrics)
             all_eval_metrics.update(metrics)
 
-            # 将指标保存到JSONL文件
+            # Save metrics to JSONL file
             metrics['global_step'] = self.state.global_step
             metrics['training_progress'] = self.get_training_progress()
             metrics['dataset_id'] = dataset.config.dataset_id
             save_jsonl([metrics], self.probe_dir / "eval_metrics.jsonl", append=True)
 
-        # 存储指标以供后续检索
+        # Store metrics for later retrieval
         self._last_eval_metrics = all_eval_metrics
         return all_eval_metrics

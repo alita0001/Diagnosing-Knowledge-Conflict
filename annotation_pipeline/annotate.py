@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-多模态标注核心逻辑
+Core Logic for Multimodal Annotation
 
-负责调用 API 对多模态内容进行幻觉检测和标注
+Responsible for calling API to detect and annotate hallucinations in multimodal content
 """
 
 import os
@@ -24,7 +24,7 @@ from .data_models import MultimodalAnnotatedSpan
 logger = logging.getLogger(__name__)
 
 
-# 加载提示词模板
+# Load prompt template
 PROMPT_TEMPLATE_PATH = Path(__file__).parent / "multimodal_annotation.prompt"
 PROMPT_TEMPLATE_PATH_WO_GT = Path(__file__).parent / "multimodal_annotation_wo_gt.prompt"
 PROMPT_TEMPLATE_PATH_WO_IMAGE = Path(__file__).parent / "multimodal_annotation_wo_image.prompt"
@@ -34,19 +34,19 @@ PROMPT_TEMPLATE_WO_GT = PROMPT_TEMPLATE_PATH_WO_GT.read_text().strip()
 PROMPT_TEMPLATE_WO_IMAGE = PROMPT_TEMPLATE_PATH_WO_IMAGE.read_text().strip()
 
 assert '{instruction}' in PROMPT_TEMPLATE and '{completion}' in PROMPT_TEMPLATE, \
-    "提示词模板必须包含 {instruction} 和 {completion} 占位符"
+    "Prompt template must contain {instruction} and {completion} placeholders"
 assert '{instruction}' in PROMPT_TEMPLATE_WO_GT and '{completion}' in PROMPT_TEMPLATE_WO_GT, \
-    "提示词模板必须包含 {instruction} 和 {completion} 占位符"
+    "Prompt template must contain {instruction} and {completion} placeholders"
 
 
 def image_to_base64(image) -> str:
-    """将 PIL Image 转换为 base64 编码字符串
+    """Convert PIL Image to base64 encoded string
     
     Args:
-        image: PIL Image 对象
+        image: PIL Image object
         
     Returns:
-        base64 编码的字符串
+        base64 encoded string
     """
     buffered = BytesIO()
     image.save(buffered, format="PNG")
@@ -55,15 +55,15 @@ def image_to_base64(image) -> str:
 
 
 def format_prompt(instruction: str,groundtruth: Optional[str], completion: str, image) -> str:
-    """格式化提示词
+    """Format prompt
     
     Args:
-        instruction: 用户指令
-        groundtruth: 真实文本
-        completion: 模型完成的文本
+        instruction: User instruction
+        groundtruth: Ground truth text
+        completion: Model completion text
         
     Returns:
-        格式化后的提示词
+        Formatted prompt
     """
     if groundtruth is not None and image is not None:
         return PROMPT_TEMPLATE.replace("{instruction}", instruction).replace("{groundtruth}", groundtruth).replace("{completion}", completion)
@@ -77,62 +77,62 @@ def assign_span_positions(
     text: str,
     min_similarity: float = 0.8
 ) -> List[MultimodalAnnotatedSpan]:
-    """为标注片段分配在原文中的位置
+    """Assign positions for annotated spans in original text
     
-    核心问题：Claude 提取的 span 可能与原文不完全匹配，需要进行模糊匹配
+    Core issue: Spans extracted by Claude might not perfectly match the original text, fuzzy matching is needed
     
     Args:
-        spans: 标注片段列表
-        text: 原始文本
-        min_similarity: 最小相似度阈值
+        spans: List of annotated spans
+        text: Original text
+        min_similarity: Minimum similarity threshold
         
     Returns:
-        添加了位置信息的标注片段列表
+        List of annotated spans with position information
     """
     results = []
-    cur_idx = 0  # 当前搜索起点
-    used_positions = set()  # 已使用的位置集合
+    cur_idx = 0  # Current search start index
+    used_positions = set()  # Set of used positions
 
     for span in spans:
-        # 模糊匹配 span 在文本中的位置
+        # Fuzzy match span position in text
         closest_match, matched_idx = try_matching_span_in_text(
-            span.span,  # Claude 提取的文本
-            text,  # 原始 completion
-            cur_idx=cur_idx,  # 当前搜索起点
-            min_similarity=min_similarity  # 最小相似度阈值
+            span.span,  # Text extracted by Claude
+            text,  # Original completion
+            cur_idx=cur_idx,  # Current search start index
+            min_similarity=min_similarity  # Minimum similarity threshold
         )
 
-        # 情况1：无法找到匹配
-        if closest_match is None: # LLM 提取的文本在原文中根本不存在；LLM 对文本进行了改写或总结；LLM 产生了幻觉，提取了不存在的内容
+        # Case 1: No match found
+        if closest_match is None: # LLM extracted text does not exist in original; LLM rewrote or summarized; LLM hallucinated, extracted non-existent content
             logger.warning(
-                f"无法在文本中定位片段 {repr(span.span)} (总片段数: {len(spans)})。"
-                f"\n保留该片段但移除标签和索引。"
+                f"Cannot locate span {repr(span.span)} in text (total spans: {len(spans)})."
+                f"\nKeep the span but remove label and index."
             )
-            span.label = None  # 容错处理，保留 span 但标记为无效
+            span.label = None  # Fault tolerance, keep span but mark as invalid
             span.index = None
             results.append(span)
             continue
         
-        # 情况2：找到重复匹配;LLM 重复标注了同一个实体;同一个词在文本中出现多次，LLM 将它们分别标注，但模糊匹配都指向了第一个
+        # Case 2: Duplicate match found; LLM annotated same entity twice; Same word appears multiple times, LLM annotated them separately but fuzzy match points to first one
         if matched_idx is not None and all(
             pos in used_positions
             for pos in range(matched_idx, matched_idx + len(closest_match))
         ):
             logger.warning(
-                f"片段 {repr(span.span)} 匹配到与已匹配片段相同的位置 "
+                f"Span {repr(span.span)} matched to same position as already matched span "
                 f"{repr(text[matched_idx:matched_idx+len(closest_match)])}"
             )
-            continue  # 跳过重复匹配
+            continue  # Skip duplicate match
 
-        # 情况3：成功匹配；找到匹配且位置未被使用
+        # Case 3: Match found; Match found and position not used
         if closest_match != span.span:
-            logger.info(f"片段 {repr(span.span)} 匹配到 {repr(closest_match)}")
+            logger.info(f"Span {repr(span.span)} matched to {repr(closest_match)}")
 
-        # 更新 span 的位置信息
+        # Update span position info
         span.index = matched_idx
         span.span = closest_match
 
-        # 更新已使用的位置集合
+        # Update used positions set
         results.append(span)
         used_positions.update(range(matched_idx, matched_idx + len(closest_match)))
         cur_idx = max(cur_idx, matched_idx + len(closest_match))
@@ -148,24 +148,24 @@ async def annotate_sample(
     image,
     model: str = "anthropic/claude-sonnet-4.5:online"
 ) -> List[MultimodalAnnotatedSpan]:
-    """使用 API 对单个样本进行幻觉标注
+    """Annotate single sample for hallucination using API
     
     Args:
-        client: OpenAI 客户端
-        instruction: 指令文本
-        groundtruth: 真实文本
-        completion_text: 模型完成的文本
-        image: PIL Image 对象
-        model: 使用的模型名称
+        client: OpenAI Client
+        instruction: Instruction text
+        groundtruth: Ground truth text
+        completion_text: Model completion text
+        image: PIL Image object
+        model: Model name to use
         
     Returns:
-        标注结果的 List[MultimodalAnnotatedSpan]
+        List[MultimodalAnnotatedSpan] of annotation results
     """
     
-    # 格式化提示词
+    # Format prompt
     prompt = format_prompt(instruction, groundtruth, completion_text, image)
     
-    # 构建消息
+    # Build messages
     if image is not None:
         image_base64 = image_to_base64(image)
         messages = [
@@ -192,7 +192,7 @@ async def annotate_sample(
             }
         ]
     
-    # 调用 API
+    # Call API
     if isinstance(client, AsyncOpenAI):
         response = await client.chat.completions.create(
         model=model,
@@ -200,7 +200,7 @@ async def annotate_sample(
         # extra_body={
         #     "provider": {
         #         "order": ["azure"],
-        #         "allow_fallbacks": False  # 强制使用指定供应商
+        #         "allow_fallbacks": False  # Force specific provider
         #     }}
         )
     else:
@@ -210,21 +210,21 @@ async def annotate_sample(
         # extra_body={
         #     "provider": {
         #         "order": ["azure"],
-        #         "allow_fallbacks": False  # 强制使用指定供应商
+        #         "allow_fallbacks": False  # Force specific provider
         #     }}
     )
 
-    # 提取响应文本
+    # Extract response text
     response_text = response.choices[0].message.content
 
-    # 解析 JSON 为 List[MultimodalAnnotatedSpan]
+    # Parse JSON to List[MultimodalAnnotatedSpan]
     annotations = parse_and_validate_json(
         response_text,
         List[MultimodalAnnotatedSpan],
         allow_partial=True
     )
 
-    # 对齐 span 位置
+    # Align span positions
     annotated_spans = assign_span_positions(annotations, completion_text)
     
     return annotated_spans

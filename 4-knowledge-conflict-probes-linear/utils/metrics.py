@@ -1,4 +1,4 @@
-"""探针评估的指标计算工具。"""
+
 
 import os
 from typing import Dict, List, Optional
@@ -16,33 +16,17 @@ def compute_clf_metrics(
     labels: np.ndarray, 
     probs: np.ndarray
 ) -> Dict[str, float]:
-    """
-    已修改：从二分类改为只支持多分类（四分类）。
-    计算多分类指标。
-    Args:
-        preds: 预测类别（0,1,2,3等）
-        labels: 真实标签（0,1,2,3等）
-        probs: 概率向量 [N, num_classes]
-    Returns:
-        指标字典
-    """
-    # 确保preds和labels是整数类型
     preds = preds.astype(int) if preds.dtype != int else preds
     labels = labels.astype(int) if labels.dtype != int else labels
     
-    # 获取类别信息：计算多分类 AUC 时，循环这些类做 One-vs-Rest，避免某些类在当前数据里根本没出现导致报错
     unique_labels = np.unique(labels)
     num_classes = len(unique_labels)
     
-    # 基本分类指标
     accuracy = accuracy_score(labels, preds)
     
-    # 确保probs是2维数组 [N, num_classes]
     if probs.ndim == 1:
-        # 如果probs是1维，说明输入格式错误
         raise ValueError(f"probs应该是2维数组 [N, num_classes]，但收到1维数组 shape={probs.shape}")
     
-    # 多分类指标：使用macro, micro, weighted
     precision_macro = precision_score(labels, preds, average='macro', zero_division=0)
     precision_micro = precision_score(labels, preds, average='micro', zero_division=0)
     precision_weighted = precision_score(labels, preds, average='weighted', zero_division=0)
@@ -156,16 +140,7 @@ def compute_metrics(
     labels: np.ndarray,
     probabilities: Optional[np.ndarray] = None
 ) -> Dict[str, float]:
-    """
-    未修改：调用compute_clf_metrics的包装函数。
-    计算评估指标。
-    Args:
-        predictions: 模型预测结果
-        labels: 真实标签
-        probabilities: 可选的概率分数
-    Returns:
-        指标字典
-    """
+
     if probabilities is None:
         probabilities = predictions
     
@@ -270,16 +245,7 @@ def plot_roc_curves(
 
 
 def plot_roc_curve(fpr: np.ndarray, tpr: np.ndarray, save_path: str) -> None:
-    """
-    未修改：绘制单个ROC曲线的辅助函数。
-    未使用
-    绘制单个ROC曲线。
-    
-    Args:
-        fpr: 假阳性率数组
-        tpr: 真阳性率数组
-        save_path: 保存路径
-    """
+
     plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, color='darkorange', lw=2)
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
@@ -304,20 +270,7 @@ def print_eval_metrics(
     save_json: bool = False,
     json_output_file: str = "evaluation_results.json"
 ) -> None:
-    """
-    已修改：从二分类改为只支持多分类指标显示，并支持保存到文件。
 
-    以格式化的方式打印评估指标。
-
-    Args:
-        metrics: 指标字典
-        metric_key_prefix: 指标键的可选前缀
-        all_labels: 用于计算baseline的可选标签
-        include_random_baseline: 是否包含随机baseline
-        seed: baseline的随机种子
-        save_to_file: 是否保存到文件
-        output_file: 输出文件路径
-    """
     import io
     from contextlib import redirect_stdout
     from datetime import datetime
@@ -373,14 +326,13 @@ def print_eval_metrics(
                 print(f"  {'召回率':<12} {metrics.get(f'{prefix}{agg_level}_recall_macro', 0):<8.4f} {metrics.get(f'{prefix}{agg_level}_recall_micro', 0):<8.4f} {metrics.get(f'{prefix}{agg_level}_recall_weighted', 0):<8.4f}")
                 print(f"  {'F1分数':<12} {metrics.get(f'{prefix}{agg_level}_f1_macro', 0):<8.4f} {metrics.get(f'{prefix}{agg_level}_f1_micro', 0):<8.4f} {metrics.get(f'{prefix}{agg_level}_f1_weighted', 0):<8.4f}")
 
-                # 每个类别的详细指标
                 num_classes = int(metrics.get(f'{prefix}{agg_level}_num_classes', 4))
                 print(f"\n每个类别One-vs-Rest详细指标 (Per-Class One-vs-Rest Metrics) - 共{num_classes}个类别:")
                 print(f"  {'类别':<6} {'Precision':<10} {'Recall':<8} {'F1':<8} {'AUC':<8} {'R@10%FPR':<10}")
                 print(f"  {'─'*58}")
 
                 for class_idx in range(num_classes):
-                    # 对于样本级别，类别从1开始（没有类别0）
+
                     actual_class_idx = class_idx if agg_level != 'sample' else class_idx + 1
 
                     # 标准One-vs-Rest指标
@@ -425,7 +377,6 @@ def print_eval_metrics(
 
                         print(f"  {actual_class_idx:<6} {precision_str:<10} {recall_str:<8} {f1_str:<8} {auc_str:<8} {recall_at_10fpr_str:<10}")
 
-                # ROC相关指标
                 has_roc_metrics = False
                 roc_info = []
                 if f'{prefix}{agg_level}_auc_ovr' in metrics:
@@ -451,7 +402,6 @@ def print_eval_metrics(
                     print(f"\n混淆矩阵 (Confusion Matrix):")
                     print("  真实→  预测↓")
 
-                    # 打印表头 - 对于样本级别，类别从1开始（没有类别0）
                     if agg_level == 'sample':
                         header_labels = [str(i + 1) for i in range(cm.shape[1])]  # 1,2,3,...
                     else:
@@ -461,7 +411,7 @@ def print_eval_metrics(
                     print(header)
                     print("      " + "─" * (5 * cm.shape[1]))
 
-                    # 打印每一行 - 对于样本级别，行标签也从1开始
+
                     for i in range(cm.shape[0]):
                         row_str = " ".join([f"{int(cm[i,j]):>4}" for j in range(cm.shape[1])])
                         row_label = i + 1 if agg_level == 'sample' else i
@@ -482,25 +432,22 @@ def print_eval_metrics(
         print(f"报告生成时间: {current_time}")
         print(f"{'='*70}")
 
-    # 获取输出内容
     output_content = output_buffer.getvalue()
 
-    # 打印到控制台
     print(output_content)
 
-    # 如果需要保存到文件
     if save_to_file:
         os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else ".", exist_ok=True)
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(output_content)
         print(f"\n✓ 评估结果已保存到文件: {output_file}")
 
-    # 如果需要保存JSON格式
+
     if save_json:
         import json
         os.makedirs(os.path.dirname(json_output_file) if os.path.dirname(json_output_file) else ".", exist_ok=True)
 
-        # 添加元数据
+
         json_data = {
             "metadata": {
                 "report_type": "multimodal_hallucination_detection_evaluation",
@@ -512,4 +459,3 @@ def print_eval_metrics(
 
         with open(json_output_file, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
-        print(f"✓ 评估结果已保存到JSON文件: {json_output_file}")

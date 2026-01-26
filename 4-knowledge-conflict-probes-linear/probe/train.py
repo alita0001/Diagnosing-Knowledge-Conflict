@@ -1,5 +1,5 @@
 """
-幻觉检测探针的训练脚本
+Training script for hallucination detection probe
 """
 
 import json
@@ -27,9 +27,9 @@ from .trainer import ProbeTrainer
 
 
 def main(training_config: TrainingConfig):
-    """主训练函数"""
+    """Main training function"""
 
-    # ===== 1、如果存在，从.env加载环境变量 =====
+    # ===== 1. Load environment variables from .env if exists =====
     load_dotenv()
 
     if training_config.upload_to_hf:
@@ -37,19 +37,19 @@ def main(training_config: TrainingConfig):
     
     wandb.init(project=training_config.wandb_project, name=training_config.probe_config.probe_id)
 
-    # ===== 2、打印训练配置 =====
+    # ===== 2. Print training config =====
     print("Training config:")
     for key, value in asdict(training_config).items():
         print(f"\t{key}: {value}")
 
 
-    # ===== 3、加载模型和processor/tokenizer =====
+    # ===== 3. Load model and processor/tokenizer =====
     print(f"Loading model: {training_config.probe_config.model_name}")
     model_name = training_config.probe_config.model_name
     is_multimodal = 'vision' in model_name.lower() or 'onevision' in model_name.lower() or 'ocean_r1_7b_instruct' in model_name.lower() or 'llama-3.2v-11b-cot' in model_name.lower()
     
     if is_multimodal:
-        # 使用 AutoProcessor 代替 AutoTokenizer
+        # Use AutoProcessor instead of AutoTokenizer
         print(f"Loading multimodal model: {model_name}")
         processor = AutoProcessor.from_pretrained(model_name)
         
@@ -61,32 +61,32 @@ def main(training_config: TrainingConfig):
         )
         tokenizer = processor
     else:
-        # 原有的文本模型加载逻辑
-        print("加载原来的文本模型")    
+        # Original text model loading logic
+        print("Loading original text model")    
         model, tokenizer = load_model_and_tokenizer(model_name)
-        # processor = None  # 非多模态模型不需要 processor
+        # processor = None  # Non-multimodal models do not need processor
 
-    # ===== 4、显存优化 =====
-    if hasattr(model, 'config'):  # 模型对象属性
+    # ===== 4. VRAM Optimization =====
+    if hasattr(model, 'config'):  # Model object attributes
         try:
             model.config.use_cache = False
         except Exception:
             pass
     if training_config.enable_gradient_checkpointing and hasattr(model, 'gradient_checkpointing_enable'):
         try:
-            # 启用梯度检查点
-            # 在训练时用计算时间换显存：不保存所有中间激活，反向传播时重新计算，从而降低显存占用
+            # Enable gradient checkpointing
+            # Trade compute for VRAM during training: recompute intermediate activations during backward pass instead of saving them
             model.gradient_checkpointing_enable()
         except Exception:
             pass
     
-    # ===== 5、加载探针 =====
+    # ===== 5. Load Probe =====
     print(f"Setting up probe: {training_config.probe_config.probe_id}")
-    model, probe = setup_probe(model, training_config.probe_config)  # 参数是基础语言模型、返回值是带LoRA的模型
+    model, probe = setup_probe(model, training_config.probe_config)  # Args are base language model, return value is model with LoRA
 
     print_trainable_parameters(probe)
 
-    # ===== 6、加载数据集 =====
+    # ===== 6. Load Datasets =====
     print("Loading datasets:")
     train_datasets: List[TokenizedProbingDataset] = [
         create_probing_dataset(config, tokenizer)
@@ -97,24 +97,24 @@ def main(training_config: TrainingConfig):
         for config in training_config.eval_dataset_configs
     ]
     
-    # 连接训练数据集
+    # Concatenate training datasets
     train_dataset = train_datasets[0]
     for dataset in train_datasets[1:]:
         train_dataset += dataset
 
-    # 如果请求，打乱并将训练数据集缩减到固定数量的样本
+    # If requested, shuffle and reduce training dataset to fixed number of samples
     if training_config.num_train_samples is not None:
         total = len(train_dataset)
         num = max(0, min(int(training_config.num_train_samples), total))
         if num < total:
-            g = torch.Generator()  # 创建 PyTorch 随机数生成器
-            g.manual_seed(training_config.seed)  # 设置随机种子，保证结果可复现
+            g = torch.Generator()  # Create PyTorch random number generator
+            g.manual_seed(training_config.seed)  # Set random seed for reproducibility
             perm = torch.randperm(total, generator=g).tolist()
-            selected_indices = perm[:num]  # 选择前 num 个样本
+            selected_indices = perm[:num]  # Select first num samples
             train_dataset = Subset(train_dataset, selected_indices)
             print(f"Using a subset of the training dataset: {num}/{total} samples")
 
-    # ===== 7、加载训练参数 =====
+    # ===== 7. Load Training Arguments =====
     training_args = TrainingArguments(
         output_dir=str(training_config.probe_config.probe_path),
         overwrite_output_dir=True,
@@ -137,33 +137,33 @@ def main(training_config: TrainingConfig):
         seed=training_config.seed,
     )
     
-    # 向training_args添加独立的学习率
+    # Add separate learning rates to training_args
     training_args.probe_head_lr = training_config.probe_head_lr
     training_args.lora_lr = training_config.lora_lr
 
-    # 禁用检查点保存（在训练期间尝试保存时会出现一个奇怪的bug）
+    # Disable checkpoint saving (causes a weird bug when attempting to save during training)
     training_args.set_save(strategy="no")
 
-    # ===== 8、数据集批处理 =====
+    # ===== 8. Dataset Batching =====
     collate_fn = partial(tokenized_probing_collate_fn, processor=processor)
 
 
-    # ===== 9、构建训练器 =====
+    # ===== 9. Build Trainer =====
     trainer = ProbeTrainer(
         probe=probe,
         eval_datasets=eval_datasets,
         cfg=training_config,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=None,  # 这是一个虚拟参数，用于HF基础Trainer类
+        eval_dataset=None,  # This is a dummy argument for HF base Trainer class
         data_collator=collate_fn,
         eval_steps=training_config.eval_steps,
         tokenizer=tokenizer,
     )
 
-    # ===== 10、意外保存 =====
+    # ===== 10. Emergency Save =====
     def save_model_callback():
-        """将探针权重、tokenizer和训练配置保存到磁盘"""
+        """Save probe weights, tokenizer and training config to disk"""
         probe.save(training_config.probe_config.probe_path)
         tokenizer.save_pretrained(training_config.probe_config.probe_path)
         save_json(
@@ -171,18 +171,18 @@ def main(training_config: TrainingConfig):
             training_config.probe_config.probe_path / "training_config.json"
         )
 
-    # 注册保存回调函数，用于意外退出时保存
+    # Register save callback for emergency exit
     atexit.register(save_model_callback)
 
-    # ===== 11、开始训练 =====
+    # ===== 11. Start Training =====
     print("Training...")
     trainer.train()
 
-    # ===== 12、训练完毕保存模型 =====
+    # ===== 12. Save model after training =====
     print(f"Saving model to {training_config.probe_config.probe_path}")
     save_model_callback()
 
-    # ===== 13、最终评估 =====
+    # ===== 13. Final Evaluation =====
     if training_config.perform_final_eval:
         eval_metrics = trainer.evaluate(
             save_roc_curves=training_config.save_roc_curves,
@@ -201,7 +201,7 @@ def main(training_config: TrainingConfig):
 
     wandb.finish()
 
-    # ===== 14、上传到huggingface =====
+    # ===== 14. Upload to HuggingFace =====
     if training_config.upload_to_hf:
         print(f"Uploading probe to HuggingFace Hub...")
         upload_probe_to_hf(
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # 从YAML加载配置
+    # Load config from YAML
     training_config = TrainingConfig(**load_yaml(args.config))
     
     main(training_config)

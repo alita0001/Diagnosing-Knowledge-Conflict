@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-多模态幻觉标注流程
+Multimodal Hallucination Annotation Pipeline
 
-该模块提供了对视觉语言模型输出进行幻觉检测和标注的工具。
-识别模型输出中的实体和事实是否得到支持、存在何种冲突，或无法验证。
+This module provides tools for detecting and annotating hallucinations in vision-language model outputs.
+Identifies whether entities and facts in model output are supported, what conflicts exist, or if they are unverifiable.
 """
 
 from .annotate import annotate_sample, assign_span_positions

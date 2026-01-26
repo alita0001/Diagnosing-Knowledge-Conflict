@@ -1,4 +1,4 @@
-"""幻觉检测探针的评估脚本。"""
+"""Evaluation script for hallucination detection probe."""
 
 import gc
 import json
@@ -41,32 +41,32 @@ def evaluate_probe(
     dump_raw_results: bool = False,
 ) -> Dict[str, float]:
     """
-    已修改
-    评估探针在数据集上的性能（四分类版本）。
+    Modified
+    Evaluate probe performance on dataset (4-class version).
     Args:
-        probe: 要评估的探针
-        eval_dataloader: 评估数据的DataLoader
-        metric_key_prefix: 指标键的前缀
-        threshold: 负类预测的阈值
-        verbose: 是否打印指标
-        save_roc_curves: 是否保存ROC曲线图
-        save_dir: 保存结果的目录
-        dump_raw_results: 是否保存原始预测结果
+        probe: The probe to evaluate
+        eval_dataloader: DataLoader for evaluation data
+        metric_key_prefix: Prefix for metric keys
+        threshold: Threshold for negative class prediction
+        verbose: Whether to print metrics
+        save_roc_curves: Whether to save ROC curve plots
+        save_dir: Directory to save results
+        dump_raw_results: Whether to save raw prediction results
     Returns:
-        评估指标字典
+        Dictionary of evaluation metrics
     """
-    # 评估前强制垃圾回收
+    # Force garbage collection before evaluation
     gc.collect()
     torch.cuda.empty_cache()
 
-    # 为不同聚合级别初始化指标集合
+    # Initialize metric collections for different aggregation levels
     all_probs = {'all': [], 'span': [], 'span_max': []}
     all_preds = {'all': [], 'span': [], 'span_max': []}
     all_labels = {'all': [], 'span': [], 'span_max': []}
 
-    # 样本级别的数据收集
-    sample_labels = []  # 样本的真实标签（conflict_type）
-    sample_preds = []   # 样本的预测标签（基于多数投票）
+    # Sample-level data collection
+    sample_labels = []  # Sample ground truth labels (conflict_type)
+    sample_preds = []   # Sample predicted labels (based on majority vote)
 
     total_lm_loss = 0
     total_probe_loss = 0
@@ -86,7 +86,7 @@ def evaluate_probe(
         conflict_types: List[Optional[int]] = batch["conflict_types"]
         print(f"DEBUG: conflict_types: {conflict_types}")
 
-        # 前向传播
+        # Forward pass
         outputs = probe(
             # input_ids=input_ids,
             # attention_mask=attention_mask,
@@ -97,62 +97,62 @@ def evaluate_probe(
         probe_logits = outputs["probe_logits"]
         probe_probs = torch.softmax(probe_logits, dim=-1).float()
 
-        # 使用阈值进行条件预测
-        # 如果负类（类别0）概率 > threshold，预测为负类
-        # 否则在三个正类（1,2,3）中选择概率最大的
-        neg_class_prob = probe_probs[:, :, 0]  # [batch_size, seq_len] 负类概率
-        pos_class_probs = probe_probs[:, :, 1:]  # [batch_size, seq_len, 3] 正类概率
+        # Conditional prediction using threshold
+        # If negative class (class 0) probability > threshold, predict as negative class
+        # Otherwise select the class with the highest probability among the three positive classes (1, 2, 3)
+        neg_class_prob = probe_probs[:, :, 0]  # [batch_size, seq_len] negative class probability
+        pos_class_probs = probe_probs[:, :, 1:]  # [batch_size, seq_len, 3] positive class probabilities
 
-        # 阈值判断
+        # Threshold judgment
         use_neg_class = neg_class_prob > threshold
 
-        # 对于正类，在类别1,2,3中选择概率最大的
-        pos_preds = torch.argmax(pos_class_probs, dim=-1) + 1  # +1 因为是从1开始的类别索引
+        # For positive classes, select the one with the highest probability among classes 1, 2, 3
+        pos_preds = torch.argmax(pos_class_probs, dim=-1) + 1  # +1 because class index starts from 1
 
-        # 根据阈值条件选择最终预测
+        # Select final prediction based on threshold condition
         probe_preds = torch.where(
             use_neg_class,
-            torch.zeros_like(pos_preds),  # 预测为类别0（负类）
-            pos_preds  # 预测为正类中的最大概率类别
+            torch.zeros_like(pos_preds),  # Predict as class 0 (negative)
+            pos_preds  # Predict as the class with max probability among positive classes
         )  
 
-        # 计算四分类交叉熵损失（带样本权重）
+        # Calculate 4-class cross-entropy loss (with sample weights)
         probe_loss = compute_probe_ce_loss(
             probe_logits=probe_logits,
             classification_labels=classification_labels,
             classification_weights=classification_weights,
         )
 
-        # 1. 所有token级别的指标（排除padding和被忽略的tokens）
+        # 1. All token-level metrics (excluding padding and ignored tokens)
         valid_mask = (attention_mask == 1) & (classification_labels != -100.0)
-        # 对于四分类，存储每个token的完整4维概率向量和预测类别索引
+        # For 4-class classification, store complete 4D probability vector and predicted class index for each token
         all_probs['all'].extend(probe_probs[valid_mask].cpu().numpy())
         all_preds['all'].extend(probe_preds[valid_mask].cpu().numpy())
-        # 范围	所有有效tokens
+        # Scope: All valid tokens
         all_labels['all'].extend(classification_labels[valid_mask].cpu().numpy().astype(int))
 
-        # 2. Span级别的指标：不会包含非 span 的有效 token
-        # 创建一个与 input_ids 同形状的布尔掩码，初始值全为 False
+        # 2. Span-level metrics: does not include valid tokens that are not spans
+        # Create a boolean mask with same shape as input_ids, initialized to False
         annotated_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
         for i in range(len(input_ids)):
-            # 四分类：收集所有类型的spans（VPC, TPC, VTC, 负样本）
+            # 4-class: collect all types of spans (VPC, TPC, VTC, negative samples)
             all_spans: List[List[int]] = vpc_spans[i] + tpc_spans[i] + vtc_spans[i] + neg_spans[i]
             for span_range in all_spans:
                 start, end = span_range[0], span_range[1]
                 assert start <= end, f"Invalid span range: {span_range}"
                 annotated_tokens_mask[i, start:end+1] = True
 
-        # 过滤被忽略的tokens
+        # Filter ignored tokens
         annotated_tokens_mask = annotated_tokens_mask & (classification_labels != -100.0)
         
         all_probs['span'].extend(probe_probs[annotated_tokens_mask].cpu().numpy())
         all_preds['span'].extend(probe_preds[annotated_tokens_mask].cpu().numpy())
-        # 范围	仅在已标注spans内的tokens
+        # Scope: Only tokens within annotated spans
         all_labels['span'].extend(classification_labels[annotated_tokens_mask].cpu().numpy().astype(int))
 
-        # 3. Span级别的指标（使用最大聚合）
+        # 3. Span-level metrics (using max aggregation)
         for i in range(len(input_ids)):
-            # 四分类：收集所有类型的spans并分配正确的类别标签
+            # 4-class: collect all types of spans and assign correct class labels
             vpc_spans_batch = vpc_spans[i]
             tpc_spans_batch = tpc_spans[i]
             vtc_spans_batch = vtc_spans[i]
@@ -161,7 +161,7 @@ def evaluate_probe(
             if len(all_spans) == 0:
                 continue
 
-            # 四分类标签：类别1 (VPC), 类别2 (TPC), 类别3 (VTC), 类别0 (负样本)
+            # 4-class labels: Class 1 (VPC), Class 2 (TPC), Class 3 (VTC), Class 0 (Negative)
             span_labels = (
                 [1] * len(vpc_spans_batch) + 
                 [2] * len(tpc_spans_batch) + 
@@ -170,25 +170,25 @@ def evaluate_probe(
             )
 
             for label, (start, end) in zip(span_labels, all_spans):
-                # 对于每个span，找到对应类别在span内的最大概率
+                # For each span, find the max probability of the corresponding class within the span
                 span_probs = probe_probs[i, start:end+1]  # [span_len, 4]
                 
-                # 基于max聚合：找出使任一类别概率最大的token，用该token的整行概率argmax作为span预测
-                token_max_vals, _ = torch.max(span_probs, dim=1)  # [span_len]   按行取最大
-                best_token_idx = torch.argmax(token_max_vals)  # 最大中的最大 的索引（token索引）
-                best_token_probs = span_probs[best_token_idx]  # 对预测决策对齐：最大Logit所在token的四个logit，用来预测
-                max_pred = int(torch.argmax(best_token_probs).cpu().item())  # 得到代表token之后选logit最大那个类别
+                # Based on max aggregation: find the token that maximizes the probability of ANY class, use that token's full row probability argmax as span prediction
+                token_max_vals, _ = torch.max(span_probs, dim=1)  # [span_len]   max along row
+                best_token_idx = torch.argmax(token_max_vals)  # Index of max of max (token index)
+                best_token_probs = span_probs[best_token_idx]  # Aligned with prediction decision: 4 logits of the token with max Logit, used for prediction
+                max_pred = int(torch.argmax(best_token_probs).cpu().item())  # Get the class with max logit for that representative token
                 
-                # 对于多分类指标，需要完整的4维概率向量
-                # 选择对应类别概率最大的token的完整概率向量
-                max_class_prob_idx = span_probs[:, label].argmax()  # 该类别的最大概率的token索引
-                max_prob_vector = span_probs[max_class_prob_idx].cpu().numpy()  # 对真实类对齐：该token的完整4维概率向量，用来评估
+                # For multi-class metrics, need full 4D probability vector
+                # Select full probability vector of the token with max probability for the corresponding class
+                max_class_prob_idx = span_probs[:, label].argmax()  # Token index with max probability for that class
+                max_prob_vector = span_probs[max_class_prob_idx].cpu().numpy()  # Aligned with ground truth: full 4D probability vector of that token, used for evaluation
                 
                 all_probs['span_max'].append(max_prob_vector)  # 保存完整的4维概率向量
                 all_preds['span_max'].append(max_pred)
                 all_labels['span_max'].append(label)
 
-        # 计算样本级别的预测（基于多数投票）
+        # Calculate sample-level predictions (based on majority vote)
         conflict_type_counts = {}
         for i in range(len(input_ids)):
             conflict_type = conflict_types[i]
@@ -198,75 +198,75 @@ def evaluate_probe(
         print(f"DEBUG: Conflict type distribution: {conflict_type_counts}")
         print(f"DEBUG: Total samples with conflict_type: {sum(conflict_type_counts.values())}")
 
-        # 4. 样本级别统计
+        # 4. Sample-level statistics
         for i in range(len(input_ids)):
             conflict_type = conflict_types[i]
-            if conflict_type is not None:  # 只处理有conflict_type标签的样本
-                # 统计该样本中预测为1,2,3类的token数量（排除类别0）
-                sample_preds_count = torch.zeros(4, dtype=torch.int)  # 索引0,1,2,3
+            if conflict_type is not None:  # Only process samples with conflict_type labels
+                # Count number of tokens predicted as class 1, 2, 3 in this sample (exclude class 0)
+                sample_preds_count = torch.zeros(4, dtype=torch.int)  # index 0, 1, 2, 3
 
-                # 获取该样本的有效token预测（attention_mask == 1）
+                # Get valid token predictions for this sample (attention_mask == 1)
                 sample_valid_preds = probe_preds[i][attention_mask[i] == 1]
 
-                # 统计每个类别的预测数量（包括类别0）
+                # Count prediction count for each class (including class 0)
                 for pred in sample_valid_preds:
                     sample_preds_count[pred] += 1
 
-                # 打印每个类别的预测token数量
+                # Print predicted token counts for each class
                 print(f"DEBUG: Sample {i} token counts - Class 0: {sample_preds_count[0]}, Class 1: {sample_preds_count[1]}, Class 2: {sample_preds_count[2]}, Class 3: {sample_preds_count[3]}")
 
-                # 样本级别预测逻辑：既然每个样本都有真实幻觉标签，应该从1,2,3中选择
-                # 如果有正类预测（1,2,3），选择数量最多的
-                if sample_preds_count[1:].sum() > 0:  # 有正类预测
+                # Sample-level prediction logic: since each sample has a ground truth hallucination label, should choose from 1, 2, 3
+                # If there are positive class predictions (1, 2, 3), choose the one with the highest count
+                if sample_preds_count[1:].sum() > 0:  # Has positive class predictions
                     max_count = sample_preds_count[1:].max()
                     candidates = torch.where(sample_preds_count[1:] == max_count)[0] + 1
                     sample_pred = candidates.min().item()
                     print(f"DEBUG: Sample {i} prediction: {sample_pred} (max positive count: {max_count})")
                 else:
-                    # 跳过这个样本，不纳入样本级别评估
+                    # Skip this sample, do not include in sample-level evaluation
                     print(f"DEBUG: Sample {i} skipped - no positive predictions detected")
                     continue
 
                 sample_labels.append(conflict_type)
                 sample_preds.append(sample_pred)
 
-        # 更新运行指标
+        # Update running metrics
         total_lm_loss += outputs["lm_loss"].item()
         total_probe_loss += probe_loss.item()
-        # 四分类：计算幻觉类别（1,2,3）的平均概率总和
+        # 4-class: Calculate sum of probabilities for hallucination classes (1, 2, 3)
         valid_probs = probe_probs[attention_mask == 1]  # [num_valid_tokens, 4]
-        hallucination_probs = valid_probs[:, 1:].sum(dim=-1)  # [num_valid_tokens] - 类别1,2,3的概率和
+        hallucination_probs = valid_probs[:, 1:].sum(dim=-1)  # [num_valid_tokens] - Sum of probabilities for classes 1, 2, 3
         total_sparsity += hallucination_probs.mean().item()
         num_batches += 1
 
-    # 计算平均指标
+    # Calculate average metrics
     metrics = {
         "lm_loss": total_lm_loss / num_batches,
         "probe_loss": total_probe_loss / num_batches,
         "sparsity": total_sparsity / num_batches,
-        "num_classes": 4,  # 四分类
+        "num_classes": 4,  # 4-class
     }
 
     # print(f"DEBUG: Final sample statistics:")
     # print(f"  Total samples with conflict_type: {sum(conflict_type_counts.values())}")
     # print(f"  Samples processed for evaluation: {len(sample_labels)}")
 
-    # 样本级别的数据转换为numpy数组
+    # Convert sample-level data to numpy arrays
     sample_labels = np.array(sample_labels) if sample_labels else np.array([])
     sample_preds = np.array(sample_preds) if sample_preds else np.array([])
-    sample_probs = np.array([])  # 样本级别没有概率矩阵
+    sample_probs = np.array([])  # No probability matrix for sample level
 
-    # 将列表转换为numpy数组
+    # Convert lists to numpy arrays
     all_probs = {k: np.array(v) for k, v in all_probs.items()}
     all_preds = {k: np.array(v) for k, v in all_preds.items()}
     all_labels = {k: np.array(v) for k, v in all_labels.items()}
 
-    # 添加样本级别的数据到all_labels中（用于打印）
+    # Add sample-level data to all_labels (for printing)
     if len(sample_labels) > 0:
         all_labels['sample'] = sample_labels
         all_preds['sample'] = sample_preds
 
-    # 为每个聚合级别计算分类指标
+    # Calculate classification metrics for each aggregation level
     for agg_level in ['all', 'span', 'span_max']:
         if len(all_labels[agg_level]) == 0:
             continue
@@ -280,10 +280,10 @@ def evaluate_probe(
         for metric_name, metric_value in clf_metrics.items():
             metrics[f"{agg_level}_{metric_name}"] = metric_value
 
-    # 计算样本级别的指标
+    # Calculate sample-level metrics
     if len(sample_labels) > 0 and len(sample_preds) > 0:
-        # 对于样本级别，我们没有概率矩阵，所以创建一个虚拟的概率矩阵
-        # 每个样本的概率向量：预测类别的概率为1，其他为0
+        # For sample level, we don't have probability matrix, so create a dummy one
+        # Probability vector for each sample: 1.0 for predicted class, 0.0 for others
         sample_probs_matrix = np.zeros((len(sample_labels), 4))
         for i, pred in enumerate(sample_preds):
             sample_probs_matrix[i, pred] = 1.0
@@ -297,14 +297,14 @@ def evaluate_probe(
         for metric_name, metric_value in sample_metrics.items():
             metrics[f"sample_{metric_name}"] = metric_value
 
-    # 如果指定了前缀，则添加前缀： metric_key_prefix（比如数据集 ID）
+    # If prefix is specified, add prefix: metric_key_prefix (e.g. dataset ID)
     if metric_key_prefix:
         metrics = {
             f"{metric_key_prefix}/{k}": v
             for k, v in metrics.items()
         }
 
-    # 如果verbose为True，则打印指标
+    # If verbose is True, print metrics
     if verbose:
         print_eval_metrics(
             metrics,
@@ -313,7 +313,7 @@ def evaluate_probe(
             include_random_baseline=True,
         )
 
-    # 保存ROC曲线
+    # Save ROC curves
     if save_roc_curves and save_dir:
         plot_roc_curves(
             all_preds, 
@@ -323,7 +323,7 @@ def evaluate_probe(
             prefix=metric_key_prefix
         )
 
-    # 如果请求，保存原始结果
+    # If requested, save raw results
     if dump_raw_results and save_dir:
         results_dir = save_dir / "eval_results"
         if metric_key_prefix:
@@ -333,19 +333,19 @@ def evaluate_probe(
         with open(results_dir / 'metrics.json', 'w') as f:
             json.dump(metrics, f, indent=4)
         
-        # 保存原始预测结果
+        # Save raw prediction results
         for agg_level in ['span_max']:
             if len(all_labels[agg_level]) > 0:
                 np.save(results_dir / f'{agg_level}_probs.npy', all_probs[agg_level])
                 np.save(results_dir / f'{agg_level}_preds.npy', all_preds[agg_level])
                 np.save(results_dir / f'{agg_level}_labels.npy', all_labels[agg_level])
 
-        # 保存样本级别的数据
+        # Save sample-level data
         if len(sample_labels) > 0:
             np.save(results_dir / 'sample_preds.npy', sample_preds)
             np.save(results_dir / 'sample_labels.npy', sample_labels)
 
-    # 清理
+    # Cleanup
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -358,31 +358,31 @@ def evaluate_on_multiple_datasets(
     tokenizer: AutoTokenizer,
 ) -> Dict[str, Dict[str, float]]:
     """
-    在多个数据集上评估探针。
+    Evaluate probe on multiple datasets.
     Args:
-        probe: 要评估的探针
-        eval_config: 评估配置
-        tokenizer: 模型的tokenizer
+        probe: The probe to evaluate
+        eval_config: Evaluation configuration
+        tokenizer: Model tokenizer
     Returns:
-        映射数据集ID到其指标的字典
+        Dictionary mapping dataset ID to its metrics
     """
     all_metrics = {}
     
-    # 创建输出目录
+    # Create output directory
     output_dir = Path(eval_config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 在每个数据集上评估
+    # Evaluate on each dataset
     for dataset_config in eval_config.dataset_configs:
         print(f"\nEvaluating on {dataset_config.dataset_id}...")
         
-        # 创建数据集
+        # Create dataset
         dataset = create_probing_dataset(dataset_config, tokenizer)
         print(f"  Dataset size: {len(dataset)} samples")
         
         from functools import partial
         collate_fn = partial(tokenized_probing_collate_fn, processor=tokenizer)
-        # 创建数据加载器
+        # Create dataloader
         dataloader = DataLoader(
             dataset,
             batch_size=eval_config.per_device_eval_batch_size,
@@ -390,7 +390,7 @@ def evaluate_on_multiple_datasets(
             shuffle=False,
         )
         
-        # 评估
+        # Evaluate
         metrics = evaluate_probe(
             probe=probe,
             eval_dataloader=dataloader,
@@ -402,11 +402,11 @@ def evaluate_on_multiple_datasets(
             dump_raw_results=eval_config.save_raw_results,
         )
         
-        # 保存指标
+        # Save metrics
         metrics['dataset_id'] = dataset_config.dataset_id
         save_jsonl([metrics], output_dir / "eval_metrics.jsonl", append=True)
 
-        # 为print_eval_metrics准备metrics（移除前缀）
+        # Prepare metrics for print_eval_metrics (remove prefix)
         display_metrics = {}
         prefix_to_remove = f"{dataset_config.dataset_id}/"
         print(f"DEBUG: dataset_id={dataset_config.dataset_id}, prefix_to_remove='{prefix_to_remove}'")
@@ -419,10 +419,10 @@ def evaluate_on_multiple_datasets(
 
         print(f"DEBUG: Metrics keys with sample: {[k for k in display_metrics.keys() if 'sample' in k][:2]}")
 
-        # 保存格式化的评估报告
+        # Save formatted evaluation report
         print_eval_metrics(
             metrics=display_metrics,
-            metric_key_prefix="",  # 现在metrics没有前缀
+            metric_key_prefix="",  # metrics has no prefix now
             save_to_file=True,
             output_file=str(output_dir / "eval_report.txt"),
             save_json=True,
@@ -435,19 +435,19 @@ def evaluate_on_multiple_datasets(
 
 
 def main(eval_config: EvaluationConfig):
-    """主评估函数。"""
-    # ===== 1、加载环境变量 =====
-    # 如果存在.env文件，加载环境变量
+    """Main evaluation function."""
+    # ===== 1. Load Environment Variables =====
+    # Load environment variables if .env file exists
     load_dotenv()
     
-    # ===== 2、打印评估配置 =====
+    # ===== 2. Print Evaluation Config =====
     print("Evaluation Configuration:")
     for key, value in eval_config.__dict__.items():
         print(f"  {key}: {value}")
     
-    # ===== 3、加载模型与处理器/分词器 =====
+    # ===== 3. Load Model and Processor/Tokenizer =====
     print(f"\nLoading model: {eval_config.probe_config.model_name}")
-    # 检查是否是多模态模型
+    # Check if it is a multimodal model
     model_name = eval_config.probe_config.model_name
     is_multimodal = ('vision' in model_name.lower() or
                      'onevision' in model_name.lower() or
@@ -457,7 +457,7 @@ def main(eval_config: EvaluationConfig):
                      'llama' in model_name.lower())
     
     if is_multimodal:
-        # 使用 AutoProcessor 代替 AutoTokenizer
+        # Use AutoProcessor instead of AutoTokenizer
         print(f"Loading multimodal model: {model_name}")
         
         processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
@@ -470,22 +470,22 @@ def main(eval_config: EvaluationConfig):
             trust_remote_code=True
         )
         
-        tokenizer = processor  # 将 processor 作为 tokenizer 传递
+        tokenizer = processor  # Pass processor as tokenizer
     else:
-        # 原有的文本模型加载逻辑
+        # Original text model loading logic
         model, tokenizer = load_model_and_tokenizer(model_name)
     
-    # ===== 4、按照配置加载并装配探针（ValueHeadProbe/LoRA等） =====
+    # ===== 4. Load and Setup Probe according to config (ValueHeadProbe/LoRA etc.) =====
     print(f"\nLoading probe: {eval_config.probe_config.probe_id}")
     model, probe = setup_probe(model, eval_config.probe_config)
     
     print(f"Device: {next(probe.parameters()).device}")
     
-    # ===== 5、在各评估数据集上运行评估 =====
+    # ===== 5. Run Evaluation on each evaluation dataset =====
     print(f"\nEvaluating on {len(eval_config.dataset_configs)} datasets...")
     results = evaluate_on_multiple_datasets(probe, eval_config, tokenizer)
     
-    # ===== 6、打印关键指标摘要 =====
+    # ===== 6. Print Key Metrics Summary =====
     print("\n" + "="*50)
     print("EVALUATION SUMMARY")
     print("="*50)
@@ -513,7 +513,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # 从YAML加载配置
+    # Load config from YAML
     config_dict = load_yaml(args.config)
     eval_config = EvaluationConfig(**config_dict)
     

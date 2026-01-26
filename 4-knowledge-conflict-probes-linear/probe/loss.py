@@ -1,6 +1,6 @@
 """
-已修改
-探针训练的损失函数
+Modified
+Loss functions for probe training
 """
 
 from typing import Dict, List, Optional, Tuple, Union
@@ -21,18 +21,18 @@ def compute_probe_ce_loss(
     ignore_label: float = -100.0,
 ):
     """
-    已修改：计算四分类交叉熵损失（带样本权重）。
-    参数:
-        probe_logits: [B, T, 4] - 四分类logits
-        classification_labels: [B, T] - 类别标签 (0, 1, 2, 3, 或 -100表示忽略)
-        classification_weights: [B, T] - 每个位置的 “样本权重”
-        max_clipped_logits: logits裁剪范围
-        ignore_label: 忽略标签值
+    Modified: Compute 4-class cross-entropy loss (with sample weights).
+    Args:
+        probe_logits: [B, T, 4] - 4-class logits
+        classification_labels: [B, T] - Class labels (0, 1, 2, 3, or -100 for ignored)
+        classification_weights: [B, T] - "Sample weights" for each position
+        max_clipped_logits: Logits clipping range
+        ignore_label: Ignored label value
     
-    返回:
-        标量损失值
+    Returns:
+        Scalar loss value
     """
-    # 裁剪logits以防止极端值
+    # Clip logits to prevent extreme values
     probe_logits_clipped = torch.clamp(
         probe_logits,
         min=-max_clipped_logits,
@@ -40,32 +40,32 @@ def compute_probe_ce_loss(
     )
     
     try:
-        # 将 [B, T, 4] reshape 为 [B*T, 4] 用于 cross_entropy
+        # Reshape [B, T, 4] to [B*T, 4] for cross_entropy
         B, T, C = probe_logits_clipped.shape
         logits_flat = probe_logits_clipped.view(-1, C)  # [B*T, 4]
-        labels_flat = classification_labels.view(-1).long()  # [B*T] - 转为long类型
+        labels_flat = classification_labels.view(-1).long()  # [B*T] - convert to long type
         weights_flat = classification_weights.view(-1)  # [B*T]
         
-        # 计算交叉熵损失（每个位置）
+        # Compute cross-entropy loss (per position)
         ce_loss_flat = F.cross_entropy(
             logits_flat,  # [B*T, 4]
             labels_flat,  # [B*T]
-            reduction='none'  # 返回每个样本的损失
+            reduction='none'  # Return loss for each sample
         )  # [B*T]
         
-        # 应用样本权重
+        # Apply sample weights
         weighted_loss_flat = ce_loss_flat * weights_flat
 
-        # 创建掩码：忽略标签为-100的位置
+        # Create mask: positions where label is -100 are ignored
         mask = (labels_flat != ignore_label)
         
-        # 只计算非忽略位置的平均损失
+        # Mean loss of non-ignored positions only
         if mask.any():
             ce_loss = weighted_loss_flat[mask].mean()
         else:
             ce_loss = torch.tensor(0.0, device=probe_logits.device)
             
-        # 检查ce_loss中是否有NaN
+        # Check for NaN in ce_loss
         if torch.isnan(ce_loss):
             print(f"WARNING: NaN detected in ce_loss")
             ce_loss = torch.tensor(0.0, device=probe_logits.device)
@@ -87,45 +87,45 @@ def compute_probe_max_aggregation_loss(
     sparsity_penalty_weight: Optional[float] = None,
 ):
     """
-    计算span级别的最大聚合损失（四分类版本）。
-    对于每个span，找到对应类别在所有token位置的最大logit，然后计算交叉熵损失。
-    参数:
-        probe_logits: [B, T, 4] - 四分类logits
-        classification_labels: [B, T] - 类别标签 (0,1,2,3,-100)
-        vpc_spans: 视觉-先验知识冲突spans
-        tpc_spans: 文本-先验知识冲突spans
-        vtc_spans: 视觉-文本冲突spans
-        negative_spans: 真实内容spans
-    返回:
-        标量平均损失
+    Compute span-level max aggregation loss (4-class version).
+    For each span, find the max logit of the corresponding class across all token positions, then compute cross-entropy loss.
+    Args:
+        probe_logits: [B, T, 4] - 4-class logits
+        classification_labels: [B, T] - Class labels (0,1,2,3,-100)
+        vpc_spans: Vision-Prior Conflict spans
+        tpc_spans: Text-Prior Conflict spans
+        vtc_spans: Vision-Text Conflict spans
+        negative_spans: Truthful content spans
+    Returns:
+        Scalar mean loss
     """
 
     span_losses = []
     device = probe_logits.device
     dtype = probe_logits.dtype
 
-    # 裁剪logits以防止极端值
+    # Clip logits to prevent extreme values
     probe_logits_clipped = torch.clamp(
         probe_logits,
         min=-max_clipped_logits,
         max=max_clipped_logits
     )
 
-    for i in range(probe_logits_clipped.shape[0]):  # 遍历批次中的项目
-        # 处理VPC spans（类别1）
+    for i in range(probe_logits_clipped.shape[0]):  # Iterate through items in batch
+        # Process VPC spans (Class 1)
         for start, end in vpc_spans[i]:
             should_ignore = (classification_labels[i, start:end+1] == -100.0).any()
 
             if should_ignore:
                 continue
             
-            # 等价于 probe_logits_clipped[i, start:end+1, :]
+            # Equivalent to probe_logits_clipped[i, start:end+1, :]
             span_logits = probe_logits_clipped[i, start:end+1]  # [span_len, 4]
             
-            # 找到类别1在span内的最大logit位置，并提取完整logit向量用于计算损失
+            # Find the position with max logit for class 1 within the span, and extract the full logit vector for loss computation
             max_logits_vector = span_logits[torch.argmax(span_logits[:, 1]), :]  # [4]
             
-            target = torch.tensor(1, device=device, dtype=torch.long)  # 类别1
+            target = torch.tensor(1, device=device, dtype=torch.long)  # Class 1
             loss = F.cross_entropy(
                 max_logits_vector.unsqueeze(0),  # [1, 4]
                 target.unsqueeze(0),  # [1]
@@ -133,7 +133,7 @@ def compute_probe_max_aggregation_loss(
             )
             span_losses.append(loss)
 
-        # 处理TPC spans（类别2）
+        # Process TPC spans (Class 2)
         for start, end in tpc_spans[i]:
             should_ignore = (classification_labels[i, start:end+1] == -100.0).any()
 
@@ -142,10 +142,10 @@ def compute_probe_max_aggregation_loss(
 
             span_logits = probe_logits_clipped[i, start:end+1]  # [span_len, 4]
             
-            # 找到类别2在span内的最大logit位置，并提取完整logit向量用于计算损失
+            # Find the position with max logit for class 2 within the span, and extract the full logit vector for loss computation
             max_logits_vector = span_logits[torch.argmax(span_logits[:, 2]), :]  # [4]
             
-            target = torch.tensor(2, device=device, dtype=torch.long)  # 类别2
+            target = torch.tensor(2, device=device, dtype=torch.long)  # Class 2
             loss = F.cross_entropy(
                 max_logits_vector.unsqueeze(0),  # [1, 4]
                 target.unsqueeze(0),  # [1]
@@ -153,7 +153,7 @@ def compute_probe_max_aggregation_loss(
             )
             span_losses.append(loss)
 
-        # 处理VTC spans（类别3）
+        # Process VTC spans (Class 3)
         for start, end in vtc_spans[i]:
             should_ignore = (classification_labels[i, start:end+1] == -100.0).any()
 
@@ -162,10 +162,10 @@ def compute_probe_max_aggregation_loss(
 
             span_logits = probe_logits_clipped[i, start:end+1]  # [span_len, 4]
             
-            # 找到类别3在span内的最大logit位置，并提取完整logit向量用于计算损失
+            # Find the position with max logit for class 3 within the span, and extract the full logit vector for loss computation
             max_logits_vector = span_logits[torch.argmax(span_logits[:, 3]), :]  # [4]
             
-            target = torch.tensor(3, device=device, dtype=torch.long)  # 类别3
+            target = torch.tensor(3, device=device, dtype=torch.long)  # Class 3
             loss = F.cross_entropy(
                 max_logits_vector.unsqueeze(0),  # [1, 4]
                 target.unsqueeze(0),  # [1]
@@ -173,7 +173,7 @@ def compute_probe_max_aggregation_loss(
             )
             span_losses.append(loss)
 
-        # 处理负样本spans（类别0）
+        # Process negative sample spans (Class 0)
         for start, end in negative_spans[i]:
             should_ignore = (classification_labels[i, start:end+1] == -100.0).any()
 
@@ -182,10 +182,10 @@ def compute_probe_max_aggregation_loss(
 
             span_logits = probe_logits_clipped[i, start:end+1]  # [span_len, 4]
             
-            # 找到类别0在span内的最大logit位置，并提取完整logit向量用于计算损失
+            # Find the position with max logit for class 0 within the span, and extract the full logit vector for loss computation
             max_logits_vector = span_logits[torch.argmax(span_logits[:, 0]), :]  # [4]
             
-            target = torch.tensor(0, device=device, dtype=torch.long)  # 类别0
+            target = torch.tensor(0, device=device, dtype=torch.long)  # Class 0
             loss = F.cross_entropy(
                 max_logits_vector.unsqueeze(0),  # [1, 4]
                 target.unsqueeze(0),  # [1]
@@ -194,21 +194,21 @@ def compute_probe_max_aggregation_loss(
             span_losses.append(loss)
 
     if not span_losses:
-        # 批次中未找到有效spans，返回零损失
+        # No valid spans found in batch, return zero loss
         return torch.tensor(0.0, device=device, dtype=dtype)
 
-    # 计算批次中所有spans的平均损失
+    # Compute mean loss of all spans in the batch
     final_loss = torch.mean(torch.stack(span_losses))
 
     if sparsity_penalty_weight is not None:  # None
         sparsity_loss = compute_sparsity_loss(
             probe_logits=probe_logits,
-            attention_mask=classification_labels != -100.0,  # 转换为attention_mask
+            attention_mask=classification_labels != -100.0,  # Convert to attention_mask
         )
 
         final_loss = final_loss + sparsity_penalty_weight * sparsity_loss
 
-    # 检查NaN
+    # Check for NaN
     if torch.isnan(final_loss):
         print(f"WARNING: NaN detected in compute_probe_max_aggregation_loss. Returning 0.0")
         final_loss = torch.tensor(0.0, device=device, dtype=dtype)
@@ -221,39 +221,39 @@ def compute_sparsity_loss(
     attention_mask: torch.Tensor,  # [batch, seq_len] 布尔或整型掩码
 ) -> Float[Tensor, ""]:
     """
-    计算稀疏性损失以鼓励探针具有选择性（四分类版本）。
-    这个损失鼓励探针具有较低的平均激活度，防止它将所有内容都标记为幻觉。
+    Compute sparsity loss to encourage selectivity in the probe (4-class version).
+    This loss encourages the probe to have lower average activation, preventing it from marking everything as hallucinations.
     
-    对于四分类，我们计算幻觉类别（1,2,3）的概率总和，鼓励这个值较低。
+    For 4-class, we calculate the sum of probabilities for hallucination classes (1, 2, 3), encouraging this value to be low.
     
-    参数:
-        probe_logits: [B, T, 4] - 探针输出logits
-        attention_mask: [B, T] - 有效tokens的掩码（布尔或整型）
-    返回:
-        标量稀疏性损失
+    Args:
+        probe_logits: [B, T, 4] - Probe output logits
+        attention_mask: [B, T] - Mask for valid tokens (boolean or integer)
+    Returns:
+        Scalar sparsity loss
     """
-    # 转换为布尔掩码
+    # Convert to boolean mask
     if attention_mask.dtype != torch.bool:
         attention_mask = attention_mask.bool()
     
-    # 使用softmax获取概率（四分类）
+    # Get probabilities using softmax (4-class)
     probe_probs = torch.softmax(probe_logits, dim=-1)  # [B, T, 4]
     
-    # 计算幻觉类别（1,2,3）的概率总和
-    hallucination_probs = probe_probs[:, :, 1:].sum(dim=-1)  # [B, T] - 类别1,2,3的概率和
+    # Compute sum of probabilities for hallucination classes (1, 2, 3)
+    hallucination_probs = probe_probs[:, :, 1:].sum(dim=-1)  # [B, T] - Sum of probabilities for classes 1, 2, 3
     
-    # 应用注意力掩码
+    # Apply attention mask
     masked_probs = hallucination_probs * attention_mask.float()
     
-    # 计算平均激活度
+    # Compute average activation
     num_valid_tokens = attention_mask.sum()
     if num_valid_tokens == 0:
         return torch.tensor(0.0, device=probe_logits.device)
     
-    # 平均每个有效token的幻觉类别概率总和是 avg_activation (63.7%)
+    # Average sum of hallucination class probabilities for each valid token is avg_activation (63.7%)
     avg_activation = masked_probs.sum() / num_valid_tokens
     
-    # 稀疏性损失就是平均激活度
+    # Sparsity loss is the average activation
     return avg_activation
 
 
@@ -264,14 +264,14 @@ def mask_high_loss_spans(
     inputs: Dict[str, torch.Tensor],
     classification_labels: Float[Tensor, 'batch_size seq_len'],
     spans: List[List[Tuple[int, int]]],
-    threshold: float = 1.0,  # 损失被视为高的阈值
+    threshold: float = 1.0,  # Threshold for considering loss as high
 ):
     """
-    对于语言模型损失较高的spans，将其标签设置为-100以忽略它们。
-    通过掩码这些高损失的真实内容 spans，减少它们对训练的影响。
+    For spans with high language model loss, set their labels to -100 to ignore them.
+    By masking these high-loss truthful content spans, reduce their impact on training.
     """
 
-    # 获取语言模型的 logits
+    # Get language model logits
     if isinstance(lm_model, PeftModel):
         with lm_model.disable_adapter():
             lm_logits: Float[Tensor, 'batch_size seq_len vocab_size'] = lm_model(
@@ -287,10 +287,10 @@ def mask_high_loss_spans(
     log_probs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
     log_probs: Float[Tensor, 'batch_size seq_len'] = log_probs.gather(-1, inputs['input_ids'][:, 1:].unsqueeze(-1)).squeeze(-1)
 
-    for i in range(log_probs.shape[0]):  # 遍历批次中的项目
-        # 仅对支持实体spans进行处理
+    for i in range(log_probs.shape[0]):  # Iterate through items in batch
+        # Only process supported entity spans
         for start, end in spans[i]:
-            if start > end: # 无效span，跳过
+            if start > end: # Invalid span, skip
                 continue
 
             span_neg_log_probs = -log_probs[i, start:end+1]
@@ -311,21 +311,21 @@ def compute_kl_divergence_loss(
     lm_labels: Int[Tensor, "batch seq_len"],
 ) -> Float[Tensor, ""]:
     """
-    计算带LoRA的模型和基础模型之间的KL散度。
+    Compute KL divergence between model with LoRA and the base model.
     
-    参数:
-        model: ValueHeadProbe模型
-        lm_logits: 来自带LoRA适配器模型的logits
-        lm_labels: 语言建模标签
-    返回:
-        标量KL散度损失
+    Args:
+        model: ValueHeadProbe model
+        lm_logits: Logits from model with LoRA adapter
+        lm_labels: Language modeling labels
+    Returns:
+        Scalar KL divergence loss
     """
     
-    # 检查模型是否有LoRA适配器
+    # Check if model has LoRA adapter
     if not isinstance(model.model, PeftModel) or not model.model.active_adapters:
         return torch.tensor(0.0, device=lm_logits.device)
     
-    # 获取不带LoRA的基础模型输出
+    # Get output from base model without LoRA
     with model.model.disable_adapter():
         base_outputs = model(
             inputs=inputs,
@@ -333,13 +333,13 @@ def compute_kl_divergence_loss(
         )
         base_logits = base_outputs["lm_logits"].detach()
     
-    # 计算KL散度
+    # Compute KL divergence
     with torch.autocast(device_type=lm_logits.device.type, enabled=False):
-        log_q = torch.log_softmax(lm_logits.float(), -1)  # model with LoRA  # 带LoRA的模型
-        p_ref = torch.softmax(base_logits.float(), -1)    # reference model  # 参考模型
+        log_q = torch.log_softmax(lm_logits.float(), -1)  # model with LoRA
+        p_ref = torch.softmax(base_logits.float(), -1)    # reference model
         kl = F.kl_div(log_q, p_ref, reduction='none', log_target=False).sum(-1)
         
-        # 仅在有效tokens上计算损失
+        # Compute loss only on valid tokens
         active_mask = (lm_labels != -100)
         if not active_mask.any():
             return torch.tensor(0.0, device=lm_logits.device)
