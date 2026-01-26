@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-多模态标注核心逻辑
+Multimodal Annotation Core Logic
 
-负责调用 API 对多模态内容进行幻觉检测和标注
+Responsible for calling API to perform hallucination detection and annotation on multimodal content
 """
 
 import os
@@ -17,17 +17,17 @@ from openai import OpenAI, AsyncOpenAI
 
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
-sys.path.append(str(Path(__file__).parent))  # 添加当前目录到路径，支持直接导入同目录模块
+sys.path.append(str(Path(__file__).parent))  # Add current directory to path to support direct import of modules in the same directory
 from utils.parsing import parse_and_validate_json
 from utils.string_utils import try_matching_span_in_text
 from data_types import MultimodalPromptSpan
 
 logger = logging.getLogger(__name__)
 
-# 设置要进行提示词生成的类别
-CLASS_OF_PROMPT = "image_vs_text"  # 可选值：image_vs_text, image_vs_prior, text_vs_prior
+# Set the class for prompt generation
+CLASS_OF_PROMPT = "image_vs_text"  # Options: image_vs_text, image_vs_prior, text_vs_prior
 
-# 加载提示词模板
+# Load prompt templates
 if CLASS_OF_PROMPT == "image_vs_text":
     IMAGE_VS_TEXT_PROMPT_TEMPLATE_PATH = Path(__file__).parent / "image_vs_text.prompt"
     PROMPT_TEMPLATE_PATH = IMAGE_VS_TEXT_PROMPT_TEMPLATE_PATH
@@ -41,17 +41,17 @@ elif CLASS_OF_PROMPT == "text_vs_prior":
 PROMPT_TEMPLATE = PROMPT_TEMPLATE_PATH.read_text().strip()
 
 # assert '{instruction}' in PROMPT_TEMPLATE and '{completion}' in PROMPT_TEMPLATE, \
-#     "提示词模板必须包含 {instruction} 和 {completion} 占位符"
+#     "Prompt template must contain {instruction} and {completion} placeholders"
 
 
 def image_to_base64(image) -> str:
-    """将 PIL Image 转换为 base64 编码字符串
+    """Convert PIL Image to base64 encoded string
     
     Args:
-        image: PIL Image 对象
+        image: PIL Image object
         
     Returns:
-        base64 编码的字符串
+        Base64 encoded string
     """
     buffered = BytesIO()
     image.save(buffered, format="PNG")
@@ -60,15 +60,15 @@ def image_to_base64(image) -> str:
 
 
 def format_prompt(instruction: Optional[str]) -> str:
-    """格式化提示词
+    """Format prompt
     
     Args:
-        instruction: 用户指令
-        groundtruth: 真实文本
-        completion: 模型完成的文本
+        instruction: User instruction
+        groundtruth: Ground truth text
+        completion: Model completed text
         
     Returns:
-        格式化后的提示词
+        Formatted prompt
     """
     if instruction is not None:
         return PROMPT_TEMPLATE.replace("{instruction}", instruction)
@@ -82,22 +82,22 @@ async def annotate_sample(
     image,
     model: str = "anthropic/claude-sonnet-4.5:online"
 ) -> List[MultimodalPromptSpan]:
-    """使用 API 对单个样本进行幻觉标注
+    """Use API to perform hallucination annotation on a single sample
     
     Args:
-        client: OpenAI 客户端
-        instruction: 指令文本
-        image: PIL Image 对象
-        model: 使用的模型名称
+        client: OpenAI client
+        instruction: Instruction text
+        image: PIL Image object
+        model: Name of the model to use
         
     Returns:
-        标注结果的 List[MultimodalPromptSpan]
+        List[MultimodalPromptSpan] of annotation results
     """
     
-    # 格式化提示词
+    # Format prompt
     prompt = format_prompt(instruction)
     
-    # 构建消息
+    # Build message
     if image is not None:
         image_base64 = image_to_base64(image)
         messages = [
@@ -124,7 +124,7 @@ async def annotate_sample(
             }
         ]
     
-    # 调用 API
+    # Call API
     if isinstance(client, AsyncOpenAI):
         response = await client.chat.completions.create(
         model=model,
@@ -132,7 +132,7 @@ async def annotate_sample(
         # extra_body={
         #     "provider": {
         #         "order": ["azure"],
-        #         "allow_fallbacks": False  # 强制使用指定供应商
+        #         "allow_fallbacks": False  # Force use of specified provider
         #     }}
         )
     else:
@@ -142,18 +142,18 @@ async def annotate_sample(
         # extra_body={
         #     "provider": {
         #         "order": ["azure"],
-        #         "allow_fallbacks": False  # 强制使用指定供应商
+        #         "allow_fallbacks": False  # Force use of specified provider
         #     }}
     )
 
-    # 提取响应文本
+    # Extract response text
     response_text = response.choices[0].message.content
     
-    # 打印原始响应（用于调试）
-    # logger.info(f" API 返回的原始响应（前500字符）: {response_text[:500]}")
-    # logger.info(f" API 返回的原始响应（完整）: {response_text}")
+    # Print raw response (for debugging)
+    # logger.info(f" Raw API response (first 500 chars): {response_text[:500]}")
+    # logger.info(f" Raw API response (full): {response_text}")
 
-    # 解析 JSON 为 List[MultimodalAnnotatedSpan]
+    # Parse JSON as List[MultimodalAnnotatedSpan]
     completion = parse_and_validate_json(
         response_text,
         MultimodalPromptSpan,

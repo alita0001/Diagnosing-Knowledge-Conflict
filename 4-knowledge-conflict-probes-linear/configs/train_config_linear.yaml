@@ -1,0 +1,82 @@
+# Example training configuration for hallucination detection probe
+
+probe_config:
+  probe_id: "R1-Onevision-7B-linear"
+
+  # model_name: "/data2/lhl1/Models/R1-Onevision-7B"
+  model_name: "/new_disk/cbl/Models/R1-Onevision-7B"   # 6002
+  layer: 20 
+
+  lora_layers: null
+  lora_r: null
+  lora_alpha: null
+  lora_dropout: null
+
+  load_from: null
+  hf_repo_id: "obalcells/hallucination-probes"
+
+  threshold: null  # 无用
+  num_classes: 4  # 四分类：真实、视觉-先验知识冲突、文本-先验知识冲突、视觉-文本冲突
+  # layers_to_hook: [18,19,20,21]  # 想钩的层ID；留空([])或不写就表示全部层
+  layers_to_hook: [20]  # 想钩的层ID；留空([])或不写就表示全部层
+
+
+
+wandb_project: "R1-Onevision-7B-linear"
+
+upload_to_hf: false
+save_evaluation_metrics: true
+save_roc_curves: true
+dump_raw_eval_results: false
+perform_final_eval: false  # 是否在训练结束后进行最终评估
+
+# Training hyperparameters
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+high_loss_threshold: null
+lambda_lm: 0.0
+lambda_kl: 0.0
+anneal_max_aggr: true
+anneal_warmup: 1.0
+probe_head_lr: 1e-3
+lora_lr: 1e-4
+enable_gradient_checkpointing: true
+gradient_accumulation_steps: 1
+max_grad_norm: 1.0
+logging_steps: 10
+seed: 42
+
+# Training datasets
+train_datasets:
+  - dataset_id: "R1-Onevision-7B-train"
+    # hf_repo: "alita01/Multimodal-Hallucination-Annotations-reduced-split"
+    hf_repo: "alita01/TriConflict-hallucination-annotations-80_20"
+    subset: "R1-Onevision-7B"
+    split: "train"
+    max_length: 1536
+    default_ignore: false
+    last_span_token: false
+    ignore_buffer: 0
+    vpc_weight: 10.0             
+    tpc_weight: 10.0                
+    vtc_weight: 10.0 
+    neg_weight: 10.0
+    shuffle: true
+    seed: 42
+    process_on_the_fly: false
+
+
+# Evaluation datasets
+eval_datasets:
+  - dataset_id: "R1-Onevision-7B-test"
+    # hf_repo: "alita01/Multimodal-Hallucination-Annotations-reduced-split"
+    hf_repo: "alita01/TriConflict-hallucination-annotations-80_20"
+    subset: "R1-Onevision-7B"
+    split: "test"
+    max_length: 1536
+    vpc_weight: 10.0             
+    tpc_weight: 10.0                
+    vtc_weight: 10.0 
+    neg_weight: 10.0
+    default_ignore: false
+    shuffle: false

@@ -11,17 +11,10 @@
 5. 支持多个数据集类别的处理
 
 使用方法：
-conda activate hal-prob
-cd knowledge_conflict_probes/prompt_writer_pipeline/
     1. 设置环境变量：
-       export HF_ENDPOINT='https://hf-mirror.com'
-       export OPENROUTER_API_KEY='sk-or-v1-...'
-       export HF_WRITE_TOKEN='hf_...'
-       export HF_TOKEN='hf_...'
-       export OPENROUTER_API_KEY='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'
-       export HF_WRITE_TOKEN='hf_...'
-       export HF_TOKEN='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'
-       export HF_ENDPOINT='https://hf-mirror.com'
+       export OPENROUTER_API_KEY='your-api-key-here'
+       export HF_WRITE_TOKEN='your-hf-token-here'
+       export HF_TOKEN='your-hf-token-here'
     
     
     2. 修改配置或使用命令行参数：
@@ -82,28 +75,24 @@ class PipelineConfig:
     """
     
     # ===== API 配置 =====
-    openrouter_api_key: str = None
-    openrouter_base_url: str = "https://xiaoai.plus/v1"
-    annotator_model: str = "openai/gpt-5"
+    openrouter_api_key: str = None  # Set via environment variable OPENROUTER_API_KEY
+    openrouter_base_url: str = "https://api.openai.com/v1"  # Or your preferred API endpoint
+    annotator_model: str = "gpt-4"
     
     # ===== HuggingFace 配置 =====
-    # hf_repo_id: str = "alita01/prompt-writer-multimodal-hallucination-probes"
-    hf_repo_id: str = "1Jin1/prompt-writer"
-    hf_token: str = "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"
+    hf_repo_id: str = "anonymous/prompt-writer"  # Replace with your HuggingFace repo
+    hf_token: str = None  # Set via environment variable HF_TOKEN
     hf_config_name: str = "Ocean_R1_7B_Instruct"  # Subset Ocean_R1_7B_Instruct
     enable_hf_upload: bool = True
     upload_interval: int = 10  # 每处理 N 个样本上传一次
     
     # ===== 数据集配置 =====
     dataset_class: str = "phd_icc"  # 可选: phd_ccs, phd_sec, phd_icc, phd_base
-    #source_dataset_name: str = "1Jin1/inference-PhD"
-    #source_dataset_name: str = "Chen08/inference-PhD-reduced"
     source_split_name: str = "phd_icc"
-    source_dataset_name: str = "Chen08/3x5x500_Datasets_NoAno"
-    # source_split_name: str = "train"
-    cache_dir: str = "/new_disk/lhl1/knowledge_conflict_probes/datasets/cache"
-    model_output_dir: Path = Path("/new_disk/lhl1/knowledge_conflict_probes/rewrite_results/experiment_20251028")
-    output_dir: Path = Path("/new_disk/lhl1/knowledge_conflict_probes/question_rewrite")
+    source_dataset_name: str = "anonymous/datasets"  # Replace with your dataset
+    cache_dir: str = "./cache"  # Local cache directory
+    model_output_dir: Path = Path("./results/rewrite_results")
+    output_dir: Path = Path("./results/question_rewrite")
     save_path:Optional[Path] = None
 
     
@@ -113,7 +102,7 @@ class PipelineConfig:
     num_process: int =50  # 要处理的样本数量
     push_intermediate_every: int = 10
     # ===== 模型推理配置 =====
-    inference_model_id: str = "/new_disk/lhl1/models/R1-Onevision-7B"  # 用于生成新 model_output 的模型
+    inference_model_id: str = "path/to/your/model"  # 用于生成新 model_output 的模型
     inference_device: str = "cuda"  # 推理设备
     regenerate_model_output: bool = True  # 是否重新生成 model_output
     inference_temperature: float = 0.9  # 温度参数：越大越随机（0.1-2.0），默认0.9增加幻觉概率
@@ -608,13 +597,11 @@ if __name__ == "__main__":
                         # default="claude-sonnet-4-5-20250929",
                         help="标注模型")
     parser.add_argument("--openrouter_base_url", type=str, 
-                        # default="https://fcs-01-01.cognitiveservices.azure.com/openai/v1",
-                        default="https://xiaoai.plus/v1",
+                        default="https://api.openai.com/v1",
                         help="OpenAI API Endpoint")
     parser.add_argument("--openrouter_api_key", type=str, 
-                        # default="5rRk14Qi5nPJrl5jVMDH0yd82TCaYtXvhiLmSmDzutXhlqlnhw79JQQJ99BDACYeBjFXJ3w3AAABACOGosb8",
-                        default="sk-HoLr04M6yFnliaBR6Bi6WadWCmwthVpmKKaORfg0SAO5wm0l",
-                        help="OpenAI API Key")
+                        default=None,
+                        help="OpenAI API Key (or set OPENROUTER_API_KEY env var)")
     parser.add_argument("--parallel_mode", type=bool, default=True,
                         help="是否并行模式")
     parser.add_argument("--push_intermediate_every", type=int, default=5,

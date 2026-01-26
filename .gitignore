@@ -1,0 +1,55 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files (may contain sensitive keys)
+.env
+.env.local
+.env.*.local
+
+# Cache and temporary files
+.cache
+*.pickle
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Experiment tracking
+wandb/
+logs/
+runs/
+
+# Local data and model outputs
+data/
+value_head_probes/
+results/
+outputs/
+checkpoints/
+hallucination_annotations/
+
+# Build files
+*.egg-info/
+**/*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# HuggingFace cache
+.huggingface/
+
+# uv lock file (optional, remove if you want to version it)
+uv.lock

@@ -1,0 +1,41 @@
+# Core dependencies for hallucination detection probe
+
+# Deep learning
+torch>=2.0.0
+transformers>=4.30.0
+peft>=0.5.0
+
+# Data handling
+datasets>=2.0.0
+numpy>=1.24.0
+
+# Utilities
+tqdm>=4.65.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Type checking (uv resolver compatible)
+jaxtyping>=0.3.0,<=0.3.2
+beartype>=0.14.0
+
+# Metrics and visualization
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Experiment tracking
+wandb>=0.15.0
+
+# Annotation pipeline
+anthropic>=0.36.0
+simple-parsing>=0.1.5
+pydantic>=2.6.0
+rouge-score>=0.1.2
+
+# Demo / serving
+modal>=0.61.0
+vllm>=0.5.0
+plotly>=5.22.0
+streamlit>=1.33.0
+pandas>=2.1.0
+accelerate>=0.20.0

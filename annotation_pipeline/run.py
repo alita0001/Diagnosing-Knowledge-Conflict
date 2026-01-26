@@ -12,10 +12,9 @@
 
 使用方法：
     1. 设置环境变量：
-       export API_KEY='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'
-       export HF_WRITE_TOKEN='hf_...'
-       export HF_TOKEN='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'
-       export HF_ENDPOINT='https://hf-mirror.com'
+       export API_KEY='your-api-key-here'
+       export HF_WRITE_TOKEN='your-hf-token-here'
+       export HF_TOKEN='your-hf-token-here'
     
     
     2. 修改配置或使用命令行参数：
@@ -75,23 +74,21 @@ class PipelineConfig:
     """
     
     # ===== API 配置 =====
-    api_key: str = "sk-9VqueFVgvUzhV5A5l322oIYGl6lrWbyWwTML2ibjHENvtq84"
-    base_url: str = "https://xiaoai.plus/v1"
-    annotator_model: str = "openai/gpt-5"
+    api_key: str = None  # Set via environment variable API_KEY
+    base_url: str = "https://api.openai.com/v1"  # Or your preferred API endpoint
+    annotator_model: str = "gpt-4"
     
     # ===== 源数据集配置 =====
-    # source_dataset_name: str = "alita01/TriConflict-inference"
-    source_dataset_name: str = "1Jin1/TriConflict-inference"
-    source_subset_name: str = "Llama-3.2V-11B-cot-text-vs-prior"  # Subset
+    source_dataset_name: str = "anonymous/TriConflict-inference"  # Replace with your dataset
+    source_subset_name: str = "model-subset"  # Subset
     source_split_name: str = "text_vs_prior"
 
     # ===== 目标数据集配置 =====
-    target_dataset_name: str = "1Jin1/TriConflict-annotations"
-    target_subset_name: str = "Llama-3.2V-11B-Cot"  # Subset
+    target_dataset_name: str = "anonymous/TriConflict-annotations"  # Replace with your dataset
+    target_subset_name: str = "model-subset"  # Subset
     target_split_name: str = "text_vs_prior"
 
-    # hf_token: str = "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"
-    hf_token: str = "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"
+    hf_token: str = None  # Set via environment variable HF_TOKEN
     output_dir: Path = Path("./hallucination_annotations")
     enable_hf_upload: bool = True
     
@@ -525,17 +522,16 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="多模态幻觉标注流程")
-    parser.add_argument("--source_dataset_name", type=str, default="1Jin1/TriConflict-inference",
-                        help="源数据集名称,例如 alita01/TriConflict-inference")
-    parser.add_argument("--source_subset_name", type=str, default="Llama-3.2V-11B-cot-text-vs-prior",
-                        help="源数据集子集名称，例如 R1-Onevision-7B")
+    parser.add_argument("--source_dataset_name", type=str, default="anonymous/TriConflict-inference",
+                        help="源数据集名称")
+    parser.add_argument("--source_subset_name", type=str, default="model-subset",
+                        help="源数据集子集名称")
     parser.add_argument("--source_split_name", type=str, default="text_vs_prior",
                         help="源数据集类别，例如 image_vs_prior")
-    parser.add_argument("--target_dataset_name", type=str, default="1Jin1/TriConflict-annotations",
-    # parser.add_argument("--target_dataset_name", type=str, default="alita01/TriConflict-annotations",
-                        help="目标数据集名称，例如 alita01/TriConflict-annotations")
-    parser.add_argument("--target_subset_name", type=str, default="Llama-3.2V-11B-Cot",
-                        help="目标数据集子集名称，例如 R1-Onevision-7B")
+    parser.add_argument("--target_dataset_name", type=str, default="anonymous/TriConflict-annotations",
+                        help="目标数据集名称")
+    parser.add_argument("--target_subset_name", type=str, default="model-subset",
+                        help="目标数据集子集名称")
     parser.add_argument("--target_split_name", type=str, default="text_vs_prior",
                         help="目标数据集类别，例如 image_vs_prior")
     parser.add_argument("--annotator_model", type=str,

@@ -5,106 +5,97 @@ from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm_asyncio
 from huggingface_hub import login
 
-# 运行前先启动模型，进行本地部署： vllm serve /new_disk/cbl/Models/R1-Onevision-7B/ --max-model-len 16384
-# 在vllm或者hal-prob环境都可以
+# Before running, start the model with local deployment: vllm serve path/to/your/model --max-model-len 16384
 
 # ================= Configuration =================
-# 1. vLLM 服务地址 (默认是 localhost:8000)
+# 1. vLLM service address (default is localhost:8000)
 VLLM_API_URL = "http://localhost:8000/v1"
-# 2. API Key (vLLM 默认通常是 "EMPTY"，除非你设置了)
+# 2. API Key (vLLM default is usually "EMPTY" unless you set it)
 VLLM_API_KEY = "EMPTY"
-# 3. 模型名称 (必须与你 vllm serve 启动时的名称完全一致，或者是 vllm logs 里显示的 served model name)
-# 你启动命令里的路径通常就是模型名
-# MODEL_NAME = "/new_disk/cbl/Models/R1-Onevision-7B/"
-MODEL_NAME = "/new_disk/lhl1/models/Llama-3.2V-11B-cot/"
+# 3. Model name (must match the name used in vllm serve)
+MODEL_NAME = "path/to/your/model"
 
-# 4. 数据集配置
-# 这里填写你上一步上传的数据集 ID，或者直接加载本地处理好的
-SOURCE_DATASET_ID = "alita01/TruthfulQA-Refactored-Contextual" 
-# 这里填写你想上传的新数据集 ID (包含推理结果)
-# TARGET_REPO_ID = "alita01/TruthfulQA-Refactored-With-Output"
-TARGET_REPO_ID = "1Jin1/TriConflict-inference"  # 你的目标上传地址
-# HF_TOKEN = "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"
-HF_TOKEN = "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"
-TARGET_SUBSET = "Llama-3.2V-11B-cot"
+# 4. Dataset configuration
+SOURCE_DATASET_ID = "anonymous/source-dataset"  # Replace with your dataset
+TARGET_REPO_ID = "anonymous/TriConflict-inference"
+HF_TOKEN = None  # Set via environment variable or replace with your token
+TARGET_SUBSET = "model-subset"
 TARGET_SPLIT = "text_vs_prior"
-# 5. 并发控制 (根据显存大小调整，7B模型通常可以设为 50-100)
+# 5. Concurrency control (adjust based on GPU memory, 7B model can usually be set to 50-100)
 MAX_CONCURRENT_REQUESTS = 64
 # =================================================
 
-# 初始化异步客户端
+# Initialize async client
 client = AsyncOpenAI(
     api_key=VLLM_API_KEY,
     base_url=VLLM_API_URL,
 )
 
-# 登录 Hugging Face
-login(token=HF_TOKEN)
+# Login to Hugging Face
+if HF_TOKEN:
+    login(token=HF_TOKEN)
 
 async def get_model_response(sem, text, model_name):
     """
-    单个请求的异步处理函数，使用信号量控制并发
+    Async function for handling a single request, using semaphore for concurrency control
     """
     async with sem:
         try:
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[
-                    # 如果模型对 System Prompt 敏感，可以在这里添加
-                    # {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": text}
                 ],
-                temperature=0.6, # 根据需要调整参数
-                max_tokens=4096,  # 控制最大输出长度
+                temperature=0.6,
+                max_tokens=4096,
             )
             return response.choices[0].message.content
         except Exception as e:
             return f"Error: {str(e)}"
 
 async def main():
-    print(f"正在加载数据集: {SOURCE_DATASET_ID}...")
-    # 加载数据集
+    print(f"Loading dataset: {SOURCE_DATASET_ID}...")
+    # Load dataset
     ds = load_dataset(SOURCE_DATASET_ID, split="train")
-    # 如果想测试，可以先只取前10条: ds = ds.select(range(10))
+    # For testing, can select first 10: ds = ds.select(range(10))
     
-    # 提取 questions
+    # Extract questions
     questions = ds['detailed_prompt']
-    print(f"待处理数据量: {len(questions)} 条")
+    print(f"Total samples to process: {len(questions)}")
 
-    # 创建信号量以控制并发数，防止在此处就把 vLLM 压垮 (虽然 vLLM 很强，但客户端也有限制)
+    # Create semaphore to control concurrency
     sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    print("开始批量推理 (Async Batch Inference)...")
+    print("Starting batch inference (Async Batch Inference)...")
     
-    # 创建所有任务
+    # Create all tasks
     tasks = [get_model_response(sem, q, MODEL_NAME) for q in questions]
     
-    # 使用 tqdm_asyncio 运行任务并显示进度条
+    # Run tasks with tqdm_asyncio progress bar
     model_outputs = await tqdm_asyncio.gather(*tasks)
 
-    print("推理完成，正在合并数据...")
+    print("Inference complete, merging data...")
     
-    # 将结果转换为 DataFrame 并合并
+    # Convert results to DataFrame and merge
     df = ds.to_pandas()
     df['model_output'] = model_outputs
 
-    # 简单的后处理：检查是否有报错的行
+    # Simple post-processing: check for error rows
     error_count = df[df['model_output'].str.startswith("Error:")].shape[0]
     if error_count > 0:
-        print(f"警告: 有 {error_count} 条数据推理失败。")
+        print(f"Warning: {error_count} samples failed inference.")
 
-    print("前 2 条结果预览:")
+    print("Preview of first 2 results:")
     print(df[['question', 'model_output']].head(2))
 
-    # 转换为 Dataset
+    # Convert to Dataset
     new_dataset = Dataset.from_pandas(df)
 
-    # 上传到 Hugging Face
-    print(f"正在上传至 {TARGET_REPO_ID} ...")
+    # Upload to Hugging Face
+    print(f"Uploading to {TARGET_REPO_ID} ...")
     new_dataset.push_to_hub(TARGET_REPO_ID, TARGET_SUBSET, split=TARGET_SPLIT, private=False)
-    # new_dataset.push_to_hub(TARGET_REPO_ID, private=False)
-    print("上传成功！")
+    print("Upload successful!")
 
 if __name__ == "__main__":
-    # 运行异步主程序
+    # Run async main
     asyncio.run(main())

@@ -1,0 +1,37 @@
+# Example evaluation configuration for hallucination detection probe
+
+# Probe configuration
+probe_config:
+  probe_id: "Llama-3.2V-11B-cot-linear-20"
+  model_name: "path/to/your/Llama-3.2V-11B-cot"  # Replace with your model path
+  layer: 20
+  lora_layers: null
+  lora_r: null
+  lora_alpha: null
+  lora_dropout: null
+  threshold: 0.7
+  load_from: "disk"  # Options: "disk", "hf", or null
+  num_classes: 4  # 四分类：真实、视觉-先验知识冲突、文本-先验知识冲突、视觉-文本冲突
+  hf_repo_id: "obalcells/hallucination-probes"
+
+# Batch size for evaluation
+per_device_eval_batch_size: 1
+
+# Output configuration
+save_predictions: true
+save_roc_curves: true
+save_raw_results: false
+
+# Datasets to evaluate on
+datasets:
+  - dataset_id: "Llama-3.2V-11B-cot-test"
+    hf_repo: "anonymous/TriConflict-annotations"  # Replace with your dataset
+    subset: "Llama-3.2V-11B-Cot"
+    split: "test"
+    max_length: 1536
+    vpc_weight: 10.0             
+    tpc_weight: 10.0                
+    vtc_weight: 10.0 
+    neg_weight: 10.0
+    default_ignore: false
+    shuffle: false

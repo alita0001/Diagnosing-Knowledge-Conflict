@@ -1,0 +1,29 @@
+probe_config:
+  probe_id: Llama-3.2V-11B-cot-linear-27
+  model_name: /new_disk/lhl1/models/Llama-3.2V-11B-cot
+  layer: 27
+  lora_layers: null
+  lora_r: null
+  lora_alpha: null
+  lora_dropout: null
+  threshold: 0.7
+  load_from: disk
+  num_classes: 4
+  hf_repo_id: obalcells/hallucination-probes
+per_device_eval_batch_size: 1
+save_predictions: true
+save_roc_curves: true
+save_raw_results: false
+datasets:
+- dataset_id: Llama-3.2V-11B-cot-test
+  hf_repo: 1Jin1/TriConflict-hallucination-annotations-80_20
+  subset: Llama-3.2V-11B-Cot
+  split: test
+  max_length: 1536
+  vpc_weight: 10.0
+  tpc_weight: 10.0
+  vtc_weight: 10.0
+  neg_weight: 10.0
+  default_ignore: false
+  shuffle: false
+output_dir: value_head_probes/Llama-3.2V-11B-cot-linear-27/evaluation_results

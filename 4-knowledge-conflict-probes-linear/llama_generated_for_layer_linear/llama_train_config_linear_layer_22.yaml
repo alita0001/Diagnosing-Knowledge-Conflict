@@ -1,0 +1,62 @@
+probe_config:
+  probe_id: Llama-3.2V-11B-cot-linear-22
+  model_name: /new_disk/lhl1/models/Llama-3.2V-11B-cot
+  layer: 22
+  lora_layers: null
+  lora_r: null
+  lora_alpha: null
+  lora_dropout: null
+  load_from: null
+  hf_repo_id: obalcells/hallucination-probes
+  threshold: null
+  num_classes: 4
+  layers_to_hook:
+  - 22
+wandb_project: Llama-3.2V-11B-cot-linear
+upload_to_hf: false
+save_evaluation_metrics: true
+save_roc_curves: true
+dump_raw_eval_results: false
+perform_final_eval: false
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+high_loss_threshold: null
+lambda_lm: 0.0
+lambda_kl: 0.0
+anneal_max_aggr: true
+anneal_warmup: 1.0
+probe_head_lr: 1e-3
+lora_lr: 1e-4
+enable_gradient_checkpointing: true
+gradient_accumulation_steps: 1
+max_grad_norm: 1.0
+logging_steps: 10
+seed: 42
+train_datasets:
+- dataset_id: Llama-3.2V-11B-cot-train
+  hf_repo: 1Jin1/TriConflict-hallucination-annotations-80_20
+  subset: Llama-3.2V-11B-Cot
+  split: train
+  max_length: 1536
+  default_ignore: false
+  last_span_token: false
+  ignore_buffer: 0
+  vpc_weight: 10.0
+  tpc_weight: 10.0
+  vtc_weight: 10.0
+  neg_weight: 10.0
+  shuffle: true
+  seed: 42
+  process_on_the_fly: false
+eval_datasets:
+- dataset_id: Llama-3.2V-11B-cot-test
+  hf_repo: 1Jin1/TriConflict-hallucination-annotations-80_20
+  subset: Llama-3.2V-11B-Cot
+  split: test
+  max_length: 1536
+  vpc_weight: 10.0
+  tpc_weight: 10.0
+  vtc_weight: 10.0
+  neg_weight: 10.0
+  default_ignore: false
+  shuffle: false
