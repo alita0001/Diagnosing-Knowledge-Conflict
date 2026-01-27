@@ -284,7 +284,7 @@ class TokenizedProbingDataset(Dataset):
                 ignore_indices.extend(nearby_indices)
                 span_to_append = [span_indices[0], span_indices[-1]]
                 if len(span_to_append) != 2:
-                    print(f"⚠️ [DATASET] VPC span 格式异常: span_indices={span_indices}, span_to_append={span_to_append}")
+                    print(f"⚠️ [DATASET] VPC span format error: span_indices={span_indices}, span_to_append={span_to_append}")
                 vpc_spans.append(span_to_append)
 
             elif span.label == 2.0:
@@ -292,39 +292,39 @@ class TokenizedProbingDataset(Dataset):
                 ignore_indices.extend(nearby_indices)
                 span_to_append = [span_indices[0], span_indices[-1]]
                 if len(span_to_append) != 2:
-                    print(f"⚠️ [DATASET] TPC span 格式异常: span_indices={span_indices}, span_to_append={span_to_append}")
+                    print(f"⚠️ [DATASET] TPC span format error: span_indices={span_indices}, span_to_append={span_to_append}")
                 tpc_spans.append(span_to_append)
-            elif span.label == 3.0:  # 视觉-文本冲突索引 (Vision-Text Conflict)
+            elif span.label == 3.0:  # Vision-Text Conflict indices
                 vtc_indices.extend(span_indices)
                 ignore_indices.extend(nearby_indices)
                 span_to_append = [span_indices[0], span_indices[-1]]
                 if len(span_to_append) != 2:
-                    print(f"⚠️ [DATASET] VTC span 格式异常: span_indices={span_indices}, span_to_append={span_to_append}")
+                    print(f"⚠️ [DATASET] VTC span format error: span_indices={span_indices}, span_to_append={span_to_append}")
                 vtc_spans.append(span_to_append)
-            elif span.label == 0.0:  # Supported  # 支持
+            elif span.label == 0.0:  # Supported (truthful content)
                 negative_indices.extend(span_indices)
                 span_to_append = [span_indices[0], span_indices[-1]]
                 if len(span_to_append) != 2:
-                    print(f"⚠️ [DATASET] Negative span 格式异常: span_indices={span_indices}, span_to_append={span_to_append}")
+                    print(f"⚠️ [DATASET] Negative span format error: span_indices={span_indices}, span_to_append={span_to_append}")
                 negative_spans.append(span_to_append)
-            else:  # -100.0 (ignored)  # -100.0（忽略）
+            else:  # -100.0 (ignored)
                 ignore_indices.extend(span_indices)
             
             self._num_added_spans += 1
         
-        # 去重并排序
+        # Deduplicate and sort
         vpc_indices = sorted(list(set(vpc_indices)))
         tpc_indices = sorted(list(set(tpc_indices)))
         vtc_indices = sorted(list(set(vtc_indices)))
         negative_indices = sorted(list(set(negative_indices) - set(vpc_indices) - set(tpc_indices) - set(vtc_indices)))
         ignore_indices = sorted(list(set(ignore_indices) - set(vpc_indices) - set(tpc_indices) - set(vtc_indices) - set(negative_indices)))
         
-        # 初始化标签和权重
+        # Initialize labels and weights
         default_label = -100.0 if self.config.default_ignore else 0.0
         labels = torch.full((len(input_ids),), default_label, dtype=torch.float32)
         
-        # 设置标签和权重
-        # 处理tokenizer和processor的兼容性
+        # Set labels and weights
+        # Handle tokenizer and processor compatibility
         if hasattr(self.tokenizer, 'tokenizer') and hasattr(self.tokenizer.tokenizer, 'pad_token_id'):
             pad_token_id = self.tokenizer.tokenizer.pad_token_id
         else:
@@ -337,9 +337,9 @@ class TokenizedProbingDataset(Dataset):
         labels[vtc_indices] = 3.0
         labels[negative_indices] = 0.0
         
-        # 创建一个与序列长度相同的张量，初始值全为 1.0
+        # Create a tensor with the same length as the sequence, initialized to 1.0
         weights = torch.full((len(input_ids),), 1.0, dtype=torch.float32)
-        weights[ignore_indices] = 0.0  # N/A权重
+        weights[ignore_indices] = 0.0  # N/A weight
         weights[vpc_indices] = self.config.vpc_weight
         weights[tpc_indices] = self.config.tpc_weight
         weights[vtc_indices] = self.config.vtc_weight
@@ -351,7 +351,7 @@ class TokenizedProbingDataset(Dataset):
         return labels, weights, vpc_spans, tpc_spans, vtc_spans, negative_spans
     
     def _shuffle_items(self):
-        """使用配置的随机种子打乱项目"""
+        """Shuffle items using the configured random seed"""
         random.seed(self.config.seed)
         random.shuffle(self.items)
         random.seed(self.config.seed)
@@ -368,13 +368,13 @@ class TokenizedProbingDataset(Dataset):
     
     def __add__(self, other):
         """
-        连接两个TokenizedProbingDataset实例。
+        Concatenate two TokenizedProbingDataset instances.
         
-        参数:
-            other: 要连接的另一个TokenizedProbingDataset实例
+        Args:
+            other: Another TokenizedProbingDataset instance to concatenate
             
-        返回:
-            TokenizedProbingDataset: 包含两个数据集项目的新数据集
+        Returns:
+            TokenizedProbingDataset: New dataset containing items from both datasets
         """
         if not isinstance(other, TokenizedProbingDataset):
             raise TypeError(f"Can only concatenate with another TokenizedProbingDataset, got {type(other)}")
@@ -385,13 +385,13 @@ class TokenizedProbingDataset(Dataset):
         if self.config.shuffle != other.config.shuffle:
             raise ValueError("Can't concatenate datasets if one of them (but not the other) are shuffled")
         
-        # 创建包含合并项目的新数据集
+        # Create new dataset containing merged items
         combined_items = self.items + other.items
         combined_processed_items = self.processed_items + other.processed_items
         
-        # 使用第一个数据集的配置
+        # Use the first dataset's configuration
         new_dataset = TokenizedProbingDataset(
-            items=[],  # 我们不想重新计算所有内容
+            items=[],  # We don't want to recompute everything
             tokenizer=self.tokenizer,
             config=self.config,
         )
@@ -412,15 +412,15 @@ def tokenized_probing_collate_fn(batch: List[Dict[str, torch.Tensor]], processor
     """
     Modified: subdivided into three types of hallucinations
     Collate function for DataLoader, handles variable-length tokenized sequences.
-    参数:
-        batch: tokenized数据集项目列表
-    返回:
-        包含填充序列的批处理字典
+    Args:
+        batch: List of tokenized dataset items
+    Returns:
+        Batch dictionary containing padded sequences
     """
-    # 找到批次中的最大长度
+    # Find the maximum length in the batch
     max_len = max(len(item["input_ids"]) for item in batch)
     
-    # 初始化批处理张量
+    # Initialize batch tensors
     batch_size = len(batch)
     input_ids = torch.full((batch_size, max_len), 0, dtype=torch.long)
     attention_mask = torch.zeros((batch_size, max_len), dtype=torch.long)
@@ -428,16 +428,16 @@ def tokenized_probing_collate_fn(batch: List[Dict[str, torch.Tensor]], processor
     classification_weights = torch.zeros((batch_size, max_len), dtype=torch.float32)
     lm_labels = torch.full((batch_size, max_len), -100, dtype=torch.long)
     
-    # span列表
+    # Span lists
     vpc_spans = []
     tpc_spans = []
     vtc_spans = []
     neg_spans = []
 
-    # 样本级别的冲突类型标签
+    # Sample-level conflict type labels
     conflict_types = []
 
-    # 填充批次
+    # Pad batch
     messages_batch = []
     for i, item in enumerate(batch):
         messages_batch.append(item["conversation"])

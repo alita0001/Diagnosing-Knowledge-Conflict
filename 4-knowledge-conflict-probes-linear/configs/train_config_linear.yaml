@@ -15,10 +15,10 @@ probe_config:
   load_from: null
   hf_repo_id: "obalcells/hallucination-probes"
 
-  threshold: null  # 无用
-  num_classes: 4  # 四分类：真实、视觉-先验知识冲突、文本-先验知识冲突、视觉-文本冲突
-  # layers_to_hook: [18,19,20,21]  # 想钩的层ID；留空([])或不写就表示全部层
-  layers_to_hook: [20]  # 想钩的层ID；留空([])或不写就表示全部层
+  threshold: null  # Not used
+  num_classes: 4  # 4-class: truthful, vision-prior conflict, text-prior conflict, vision-text conflict
+  # layers_to_hook: [18,19,20,21]  # Layer IDs to hook; leave empty ([]) or omit to hook all layers
+  layers_to_hook: [20]  # Layer IDs to hook; leave empty ([]) or omit to hook all layers
 
 
 
@@ -28,7 +28,7 @@ upload_to_hf: false
 save_evaluation_metrics: true
 save_roc_curves: true
 dump_raw_eval_results: false
-perform_final_eval: false  # 是否在训练结束后进行最终评估
+perform_final_eval: false  # Whether to perform final evaluation after training
 
 # Training hyperparameters
 per_device_train_batch_size: 1

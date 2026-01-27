@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 批量逐层运行线性探针评估脚本的小工具
-# 用法:
+# Utility script to run linear probe evaluation layer by layer in batch
+# Usage:
 #   ./run_eval_layers_linear_ocean.sh 22 23 24 25 26 27
-# 或者不带参数则默认尝试 0-27 层
+# Or run without arguments to default to layers 0-27
 
 CONFIG_BASE="configs/eval_config_linear_ocean.yaml"
 OUT_DIR="generated_for_eval_layer_linear"
@@ -16,7 +16,7 @@ mkdir -p "$OUT_DIR"
 if [ "$#" -gt 0 ]; then
   LAYERS=("$@")
 else
-  # 默认层范围 0-27（Ocean_R1_7B_Instruct 模型的层数）
+  # Default layer range 0-27 (number of layers in Ocean_R1_7B_Instruct model)
   LAYERS=(21 22 23 24 25 26 27)
 fi
 
@@ -32,7 +32,7 @@ import yaml, sys
 cfg = yaml.safe_load(open('$CONFIG_BASE'))
 cfg.setdefault('probe_config', {})
 cfg['probe_config']['probe_id'] = 'Ocean_R1_7B_Instruct-linear-' + str(int($L))
-cfg['probe_config']['layer'] = int($L)  # 设置正确的层号
+cfg['probe_config']['layer'] = int($L)  # Set correct layer number
 cfg['output_dir'] = 'value_head_probes/Ocean_R1_7B_Instruct-linear-' + str(int($L)) + '/evaluation_results'
 with open('$NEWCFG', 'w') as f:
     yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
@@ -47,11 +47,11 @@ from probe.evaluate import main
 from probe.config import EvaluationConfig
 from utils.file_utils import load_yaml
 
-# 从YAML加载配置
+# Load configuration from YAML
 config_dict = load_yaml('$NEWCFG')
 eval_config = EvaluationConfig(**config_dict)
 
-# 运行评估
+# Run evaluation
 main(eval_config)
 "
   echo "Finished layer $L"

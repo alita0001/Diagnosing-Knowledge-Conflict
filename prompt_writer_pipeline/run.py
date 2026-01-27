@@ -117,13 +117,13 @@ class PipelineConfig:
         """Validate necessary configuration"""
         if not self.openrouter_api_key:
             raise ValueError(
-                "未设置 OPENROUTER_API_KEY 环境变量\n"
-                "请运行: export OPENROUTER_API_KEY='sk-or-v1-...'"
+                "OPENROUTER_API_KEY environment variable not set\n"
+                "Please run: export OPENROUTER_API_KEY='sk-or-v1-...'"
             )
         
         if self.enable_hf_upload and not self.hf_token:
-            logger.warning("启用 HuggingFace 上传但未设置 HF_WRITE_TOKEN 或 HF_TOKEN")
-            logger.warning("上传功能将被禁用")
+            logger.warning("HuggingFace upload enabled but HF_WRITE_TOKEN or HF_TOKEN not set")
+            logger.warning("Upload functionality will be disabled")
             self.enable_hf_upload = False
 
 
@@ -150,7 +150,7 @@ def is_item_processed(item: MultimodalDatasetItem, processed_keys: set) -> bool:
     return get_item_key(item) in processed_keys
 
 def load_processed_items_from_disk(local_dataset_dir: Path) -> List[MultimodalDatasetItem]:
-    """从本地 Arrow 数据集加载已处理的结果"""
+    """Load processed results from local Arrow dataset"""
     if not local_dataset_dir.exists():
         return []
     
@@ -172,7 +172,7 @@ def load_processed_items_from_disk(local_dataset_dir: Path) -> List[MultimodalDa
     return validated_items
 
 # ============================================================================
-# HuggingFace 上传相关函数
+# HuggingFace upload related functions
 # ============================================================================
 # Unify data format before upload
 def prepare_item_for_upload(item: MultimodalDatasetItem, config: PipelineConfig) -> dict:
@@ -469,7 +469,7 @@ async def process_sample(config: PipelineConfig, client: OpenAI | AsyncOpenAI, i
 
 
 # ============================================================================
-# 主函数
+# Main function
 # ============================================================================
 
 async def main(config: Optional[PipelineConfig] = None):

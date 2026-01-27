@@ -1,7 +1,7 @@
 probe_config:
   probe_id: Ocean_R1_7B_Instruct-linear-0
   model_name: /new_disk/lhl1/models/Ocean_R1_7B_Instruct
-  layer: 20  #没用上，该数据直接从训练好的探针配置中加载了
+  layer: 20  # Not used, this data is loaded directly from the trained probe configuration
   lora_layers: null
   lora_r: null
   lora_alpha: null

@@ -11,7 +11,7 @@ probe_config:
   lora_dropout: null
   threshold: 0.7
   load_from: "disk"  # Options: "disk", "hf", or null
-  num_classes: 4  # 四分类：真实、视觉-先验知识冲突、文本-先验知识冲突、视觉-文本冲突
+  num_classes: 4  # 4-class: truthful, vision-prior conflict, text-prior conflict, vision-text conflict
   hf_repo_id: "obalcells/hallucination-probes"
 
 # Batch size for evaluation

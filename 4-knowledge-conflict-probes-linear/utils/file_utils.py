@@ -84,7 +84,7 @@ def save_jsonl(
         dict_list = [dict_list]
 
     if append and (not os.path.exists(filepath)):
-        # 文件不存在时自动创建新文件，不需要打印信息
+        # Automatically create new file if it doesn't exist, no need to print message
         append = False
 
     mode = "a" if append else "w"

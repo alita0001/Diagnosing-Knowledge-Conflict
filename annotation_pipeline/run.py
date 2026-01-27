@@ -57,13 +57,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 测试日志
+# Test logging
 logger.info("✅ Logging configuration complete")
 
 # combined_dataset: Dataset = None
 
 # ============================================================================
-# 配置类
+# Configuration class
 # ============================================================================
 
 @dataclass
@@ -106,7 +106,7 @@ class PipelineConfig:
         if self.hf_token is None:
             self.hf_token = os.getenv("HF_WRITE_TOKEN") or os.getenv("HF_TOKEN")
  
-        # 确保路径为 Path 对象
+        # Ensure path is a Path object
         if isinstance(self.output_dir, str):
             self.output_dir = Path(self.output_dir)
         
@@ -132,7 +132,7 @@ class PipelineConfig:
 
 
 # ============================================================================
-# 工具函数
+# Utility functions
 # ============================================================================
 
 def get_item_key(item: MultimodalDatasetItem) -> str:
@@ -176,7 +176,7 @@ def load_processed_items_from_disk(local_dataset_dir: Path) -> List[MultimodalDa
     return validated_items
 
 # ============================================================================
-# HuggingFace 上传相关函数
+# HuggingFace upload related functions
 # ============================================================================
 # Unify data format before upload
 def prepare_item_for_upload(item: MultimodalDatasetItem, config: PipelineConfig) -> dict:
@@ -202,7 +202,7 @@ def prepare_item_for_upload(item: MultimodalDatasetItem, config: PipelineConfig)
     
     return item_dict
 
-# 上传到 HuggingFace
+# Upload to HuggingFace
 def upload_to_huggingface(
     config: PipelineConfig
 ) -> None:
@@ -287,7 +287,7 @@ def upload_to_huggingface(
 
 
 # ============================================================================
-# 数据加载和预处理
+# Data loading and preprocessing
 # ============================================================================
 
 def load_processed_item_keys(
@@ -439,7 +439,7 @@ async def process_sample(config: PipelineConfig, client: OpenAI | AsyncOpenAI, i
 
 
 # ============================================================================
-# 主函数
+# Main function
 # ============================================================================
 
 async def main(config: Optional[PipelineConfig] = None):

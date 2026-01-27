@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 批量逐层运行线性探针训练脚本的小工具
-# 用法:
+# Utility script to run linear probe training layer by layer in batch
+# Usage:
 #   ./run_layers_linear.sh 22 23 24 25 26 27
-# 或者不带参数则默认尝试 0-27 层
+# Or run without arguments to default to layers 0-27
 
 CONFIG_BASE="configs/train_config_linear.yaml"
 OUT_DIR="generated_for_layer_linear"
@@ -16,7 +16,7 @@ mkdir -p "$OUT_DIR"
 if [ "$#" -gt 0 ]; then
   LAYERS=("$@")
 else
-  # 默认层范围 0-27（R1-Onevision-7B 模型的层数）
+  # Default layer range 0-27 (number of layers in R1-Onevision-7B model)
   LAYERS=(3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27)
 fi
 

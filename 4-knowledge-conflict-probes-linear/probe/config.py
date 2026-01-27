@@ -153,7 +153,7 @@ class EvaluationConfig:
     save_roc_curves: bool = True  
     save_raw_results: bool = False 
     
-    dataset_configs: List[TokenizedProbingDatasetConfig] = field(default_factory=list, init=False)  # 数据集配置对象列表
+    dataset_configs: List[TokenizedProbingDatasetConfig] = field(default_factory=list, init=False)  # List of dataset configuration objects
     
     def __post_init__(self):
         if isinstance(self.probe_config, dict):

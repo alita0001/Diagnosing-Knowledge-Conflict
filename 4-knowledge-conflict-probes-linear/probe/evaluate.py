@@ -184,7 +184,7 @@ def evaluate_probe(
                 max_class_prob_idx = span_probs[:, label].argmax()  # Token index with max probability for that class
                 max_prob_vector = span_probs[max_class_prob_idx].cpu().numpy()  # Aligned with ground truth: full 4D probability vector of that token, used for evaluation
                 
-                all_probs['span_max'].append(max_prob_vector)  # 保存完整的4维概率向量
+                all_probs['span_max'].append(max_prob_vector)  # Save complete 4D probability vector
                 all_preds['span_max'].append(max_pred)
                 all_labels['span_max'].append(label)
 

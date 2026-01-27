@@ -218,7 +218,7 @@ def compute_probe_max_aggregation_loss(
 
 def compute_sparsity_loss(
     probe_logits: Float[Tensor, "batch seq_len num_classes"],
-    attention_mask: torch.Tensor,  # [batch, seq_len] 布尔或整型掩码
+    attention_mask: torch.Tensor,  # [batch, seq_len] boolean or integer mask
 ) -> Float[Tensor, ""]:
     """
     Compute sparsity loss to encourage selectivity in the probe (4-class version).

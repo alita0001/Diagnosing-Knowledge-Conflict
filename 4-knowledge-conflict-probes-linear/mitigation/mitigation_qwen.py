@@ -30,12 +30,12 @@ class HallucinationMitigator:
 
     def load_models(self):
         """Loads the base LLM and the ValueHeadProbe."""
-        # ===== 3、加载模型和processor/tokenizer =====
+        # ===== 3. Load model and processor/tokenizer =====
         print(f"Loading model: {self.model_name}")
         from transformers import AutoModelForImageTextToText, AutoProcessor
-        # 检查是否是多模态模型
+        # Check if it is a multimodal model
         
-        # 使用 AutoProcessor 代替 AutoTokenizer
+        # Use AutoProcessor instead of AutoTokenizer
         print(f"Loading multimodal model: {self.model_name}")
         processor = AutoProcessor.from_pretrained(self.model_name)
         
@@ -201,10 +201,10 @@ class HallucinationMitigator:
         """
         Token-Level Rejection Sampling (FAST, Qwen2.5-VL friendly).
 
-        关键修复：
-        - **alpha==0**：直接走 `model.generate`（等价 baseline，避免自写 decode path 触发 cache_position/position 问题）
-        - **alpha>0**：自写 KV-cache decoding，但为 Qwen2.5-VL 显式传 `cache_position`
-        - 只返回生成部分（不包含 prompt/system/user）
+        Key fixes:
+        - **alpha==0**: Directly use `model.generate` (equivalent to baseline, avoids custom decode path triggering cache_position/position issues)
+        - **alpha>0**: Custom KV-cache decoding, but explicitly pass `cache_position` for Qwen2.5-VL
+        - Only return generated part (excluding prompt/system/user)
         """
         device = input_ids.device
 
@@ -256,7 +256,7 @@ class HallucinationMitigator:
             if image_grid_thw is not None:
                 model_inputs["image_grid_thw"] = image_grid_thw
 
-            # Qwen2.5-VL / 新 cache：需要 cache_position 才能正确对齐 RoPE/Cache 更新
+            # Qwen2.5-VL / new cache: need cache_position to correctly align RoPE/Cache updates
             cache_pos = torch.arange(prompt_len, device=device, dtype=torch.long)
             model_inputs["cache_position"] = cache_pos
             outputs = self.model(**model_inputs)
@@ -264,20 +264,20 @@ class HallucinationMitigator:
             past = outputs.past_key_values
             next_logits = outputs.logits[:, -1, :]
 
-        # 多模态：后续 steps 不再传 pixel_values（避免重复视觉编码）
+        # Multimodal: don't pass pixel_values in subsequent steps (avoid repeated visual encoding)
         step_pixel_values = None if (pixel_values is not None) else pixel_values
 
         # decoding loop
         eos_id = getattr(self.processor.tokenizer, "eos_token_id", None)
         alpha = float(alpha)
 
-        # 生成历史（用于轻度 repetition 控制）
+        # Generation history (for light repetition control)
         gen_history: List[int] = []
         recent_window = 64
         rep_penalty = 0.3  # log-space penalty
 
         for _ in range(int(max_new_tokens)):
-            prefix_len = cur_len  # 当前 prefix 长度
+            prefix_len = cur_len  # Current prefix length
             # candidates: respect top_k and num_candidates
             K = int(num_candidates) if int(num_candidates) > 0 else 1
             if top_k is not None and int(top_k) > 0:
@@ -306,7 +306,7 @@ class HallucinationMitigator:
             truth_scores = (1.0 - halluc_scores).clamp(min=1e-6, max=1.0)
             truth_log = torch.log(truth_scores)
 
-            # alpha warm-up: 前 16 token 逐步增强
+            # alpha warm-up: gradually increase for first 16 tokens
             warm = min(1.0, (len(gen_history) + 1) / 16.0)
             alpha_eff = alpha * warm
 
@@ -345,7 +345,7 @@ class HallucinationMitigator:
                 # IMPORTANT: cache_position for this new token
                 step_inputs["cache_position"] = torch.tensor([prefix_len], device=device, dtype=torch.long)
 
-                # 多模态一般不需要再传 pixel_values；如果某些模型需要，保留兜底
+                # Multimodal models generally don't need pixel_values again; keep as fallback if some models need it
                 if step_pixel_values is not None:
                     step_inputs["pixel_values"] = step_pixel_values
                 if image_grid_thw is not None:
@@ -371,10 +371,10 @@ class HallucinationMitigator:
         """
         Score candidates by running the **probe** on a single next-token step using the prefix KV-cache.
 
-        Qwen2.5-VL (Transformers Cache/DynamicCache) 注意点：
-        - `past_key_values` 是 Cache 对象，forward 会 **in-place update**
-        - batch 扩展 Cache 很容易踩坑，因此这里走 **逐候选 sequential**，并对 cache 做 copy/deepcopy
-        - 为了避免 position/rope 对齐错误，显式传 `cache_position = [prefix_len]`
+        Qwen2.5-VL (Transformers Cache/DynamicCache) Notes:
+        - `past_key_values` is a Cache object, forward will **in-place update**
+        - Batch expansion of Cache is error-prone, so here we use **sequential per-candidate** and copy/deepcopy the cache
+        - To avoid position/rope alignment errors, explicitly pass `cache_position = [prefix_len]`
         """
         K = int(num_candidates) if int(num_candidates) > 0 else int(candidate_tokens.size(0))
         device = candidate_tokens.device
@@ -477,8 +477,8 @@ class HallucinationMitigator:
         """
         Backward-compatible wrapper.
 
-        - 当 past_key_values 可用时：走 _evaluate_candidates_incremental（KV-Cache, FAST）
-        - 否则：退化到全序列评估（兼容性更强但更慢）
+        - When past_key_values is available: use _evaluate_candidates_incremental (KV-Cache, FAST)
+        - Otherwise: fall back to full sequence evaluation (more compatible but slower)
         """
         if past_key_values is not None:
             return self._evaluate_candidates_incremental(

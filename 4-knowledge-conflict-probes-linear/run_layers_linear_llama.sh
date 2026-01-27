@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 批量逐层运行线性探针训练脚本的小工具
-# 用法:
+# Utility script to run linear probe training layer by layer in batch
+# Usage:
 #   ./run_layers_linear.sh 22 23 24 25 26 27
-# 或者不带参数则默认尝试 0-27 层
+# Or run without arguments to default to layers 0-27
 
 CONFIG_BASE="configs/train_config_linear_llama.yaml"
 OUT_DIR="llama_generated_for_layer_linear"
@@ -16,7 +16,7 @@ mkdir -p "$OUT_DIR"
 if [ "$#" -gt 0 ]; then
   LAYERS=("$@")
 else
-  # 默认层范围 0-31（Llama-3.2V-11B-cot 模型的层数）
+  # Default layer range 0-31 (number of layers in Llama-3.2V-11B-cot model)
   LAYERS=(3 8 13 18 23 28 33 38)
   # LAYERS=(37 39)
 fi
